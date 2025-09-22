@@ -196,6 +196,10 @@ app.use(express.static(STATIC_DIR));
 const rooms = new Map();
 
 const clamp = (value, min, max) => Math.max(min, Math.min(value, max));
+const DEFAULT_EVENT_LOG_LIMIT = 20;
+const MAX_EVENT_LOG_LIMIT = 100;
+
+const escapeRegex = (value) => String(value).replace(/[-/\\^$*+?.()|[\]{}]/g, '\\$&');
 
 const randomCoord = () => ({
   x: Math.floor(Math.random() * (WORLD_WIDTH / SEGMENT_SIZE)) * SEGMENT_SIZE + SEGMENT_SIZE / 2,
@@ -455,6 +459,282 @@ class StatsStore {
     } catch (error) {
       console.error('MongoDB 이벤트 로그 저장 실패, 메모리 로그를 유지합니다.', error.message);
     }
+  }
+
+  normalizeEventLogEntry(raw) {
+    if (!raw || typeof raw !== 'object') return null;
+    const timestampMs = Number.isFinite(raw.timestampMs)
+      ? raw.timestampMs
+      : raw.timestamp instanceof Date
+        ? raw.timestamp.getTime()
+        : Number.isFinite(raw.timestamp)
+          ? raw.timestamp
+          : Date.now();
+    let mode =
+      raw.mode && typeof raw.mode === 'object'
+        ? {
+            key: typeof raw.mode.key === 'string' ? raw.mode.key : null,
+            label: typeof raw.mode.label === 'string' ? raw.mode.label : null
+          }
+        : null;
+    if (mode && !mode.key && !mode.label) {
+      mode = null;
+    }
+    const normalizeParticipants = (value) => {
+      if (!value || typeof value !== 'object') return {};
+      return Object.entries(value).reduce((acc, [key, participant]) => {
+        if (!participant || typeof participant !== 'object') return acc;
+        acc[key] = {
+          id: typeof participant.id === 'string' ? participant.id : null,
+          name: typeof participant.name === 'string' ? participant.name : null,
+          color: typeof participant.color === 'string' ? participant.color : null
+        };
+        return acc;
+      }, {});
+    };
+    const normalizeLeaderboard = (rows) => {
+      if (!Array.isArray(rows)) return [];
+      return rows.slice(0, 6).map((row) => ({
+        id: typeof row.id === 'string' ? row.id : null,
+        name: typeof row.name === 'string' ? row.name : null,
+        score: Number.isFinite(row.score) ? row.score : null,
+        kills: Number.isFinite(row.kills) ? row.kills : null,
+        alive: typeof row.alive === 'boolean' ? row.alive : null,
+        color: typeof row.color === 'string' ? row.color : null
+      }));
+    };
+    const context = raw.context && typeof raw.context === 'object'
+      ? {
+          phase: typeof raw.context.phase === 'string' ? raw.context.phase : null,
+          playerCount: Number.isFinite(raw.context.playerCount) ? raw.context.playerCount : null,
+          aliveCount: Number.isFinite(raw.context.aliveCount) ? raw.context.aliveCount : null,
+          spectatorCount: Number.isFinite(raw.context.spectatorCount) ? raw.context.spectatorCount : null,
+          leaderboard: normalizeLeaderboard(raw.context.leaderboard),
+          tournament:
+            raw.context.tournament && typeof raw.context.tournament === 'object'
+              ? {
+                  roundsToWin: Number.isFinite(raw.context.tournament.roundsToWin)
+                    ? raw.context.tournament.roundsToWin
+                    : null,
+                  championId:
+                    typeof raw.context.tournament.championId === 'string'
+                      ? raw.context.tournament.championId
+                      : null,
+                  wins: Array.isArray(raw.context.tournament.wins)
+                    ? raw.context.tournament.wins.slice(0, 12).map((item) => ({
+                        playerId: typeof item.playerId === 'string' ? item.playerId : null,
+                        winCount: Number.isFinite(item.winCount) ? item.winCount : null
+                      }))
+                    : []
+                }
+              : null
+        }
+      : null;
+    const feed = raw.feed && typeof raw.feed === 'object'
+      ? {
+          type: typeof raw.feed.type === 'string' ? raw.feed.type : null,
+          message: typeof raw.feed.message === 'string' ? raw.feed.message : null,
+          detail: typeof raw.feed.detail === 'string' ? raw.feed.detail : null,
+          accent: typeof raw.feed.accent === 'string' ? raw.feed.accent : null,
+          primaryId: typeof raw.feed.primaryId === 'string' ? raw.feed.primaryId : null,
+          secondaryId: typeof raw.feed.secondaryId === 'string' ? raw.feed.secondaryId : null
+        }
+      : null;
+    const meta = raw.meta && typeof raw.meta === 'object'
+      ? {
+          cause: typeof raw.meta.cause === 'string' ? raw.meta.cause : null,
+          powerup: typeof raw.meta.powerup === 'string' ? raw.meta.powerup : null,
+          score: Number.isFinite(raw.meta.score) ? raw.meta.score : null
+        }
+      : null;
+
+    return {
+      eventId: typeof raw.eventId === 'string' ? raw.eventId : typeof raw.id === 'string' ? raw.id : null,
+      type: typeof raw.type === 'string' ? raw.type : 'event',
+      timestamp: timestampMs,
+      timestampIso: new Date(timestampMs).toISOString(),
+      highlight: Boolean(raw.highlight),
+      tags: Array.isArray(raw.tags) ? raw.tags.filter((tag) => typeof tag === 'string').slice(0, 12) : [],
+      roomId: typeof raw.roomId === 'string' ? raw.roomId : null,
+      roomName: typeof raw.roomName === 'string' ? raw.roomName : null,
+      round: Number.isFinite(raw.round) ? raw.round : null,
+      mode,
+      participants: normalizeParticipants(raw.participants),
+      feed,
+      meta,
+      context,
+      payload: raw.payload && typeof raw.payload === 'object' ? { ...raw.payload } : null
+    };
+  }
+
+  memoryEventMatchesCriteria(event, criteria) {
+    if (!event) return false;
+    const {
+      types,
+      tags,
+      roomId,
+      highlight,
+      before,
+      mode,
+      playerId,
+      playerName,
+      search
+    } = criteria;
+    const timestamp = Number.isFinite(event.timestamp) ? event.timestamp : Date.now();
+    if (before && !(timestamp < before)) return false;
+    if (highlight !== undefined && Boolean(event.highlight) !== highlight) return false;
+    if (roomId && event.roomId !== roomId) return false;
+    if (mode) {
+      const key = event.mode && typeof event.mode === 'object' ? event.mode.key : null;
+      if (key !== mode) return false;
+    }
+    if (Array.isArray(types) && types.length && !types.includes(event.type)) {
+      return false;
+    }
+    if (Array.isArray(tags) && tags.length) {
+      const eventTags = Array.isArray(event.tags) ? event.tags : [];
+      if (!eventTags.some((tag) => tags.includes(tag))) return false;
+    }
+    const participants =
+      event.participants && typeof event.participants === 'object'
+        ? Object.values(event.participants).filter(Boolean)
+        : [];
+    if (playerId) {
+      if (!participants.some((participant) => participant.id === playerId)) return false;
+    }
+    if (playerName) {
+      const lower = playerName.toLowerCase();
+      const participantMatch = participants.some((participant) =>
+        typeof participant.name === 'string' && participant.name.toLowerCase().includes(lower)
+      );
+      if (!participantMatch) return false;
+    }
+    if (search) {
+      const lower = search.toLowerCase();
+      const haystacks = [];
+      if (event.feed?.message) haystacks.push(event.feed.message);
+      if (event.feed?.detail) haystacks.push(event.feed.detail);
+      participants.forEach((participant) => {
+        if (participant?.name) {
+          haystacks.push(participant.name);
+        }
+      });
+      if (!haystacks.some((value) => value.toLowerCase().includes(lower))) {
+        return false;
+      }
+    }
+    return true;
+  }
+
+  async findEventLogs(options = {}) {
+    const limit = clamp(Number.parseInt(options.limit, 10) || DEFAULT_EVENT_LOG_LIMIT, 1, MAX_EVENT_LOG_LIMIT);
+    const parseCursor = (value) => {
+      if (value === null || value === undefined || value === '') return null;
+      if (Number.isFinite(value)) return Number(value);
+      const numeric = Number.parseInt(value, 10);
+      if (Number.isFinite(numeric)) return numeric;
+      const parsed = Date.parse(value);
+      return Number.isFinite(parsed) ? parsed : null;
+    };
+    const before = parseCursor(options.before);
+    const types = Array.isArray(options.types) ? options.types.filter(Boolean).slice(0, 6) : [];
+    const tags = Array.isArray(options.tags) ? options.tags.filter(Boolean).slice(0, 6) : [];
+    const highlight = typeof options.highlight === 'boolean' ? options.highlight : undefined;
+    const mode = typeof options.mode === 'string' && options.mode ? options.mode : null;
+    const playerId = typeof options.playerId === 'string' && options.playerId ? options.playerId : null;
+    const playerName = typeof options.playerName === 'string' && options.playerName ? options.playerName : null;
+    const search = typeof options.search === 'string' && options.search ? options.search.trim() : null;
+    const roomId = typeof options.roomId === 'string' && options.roomId ? options.roomId : null;
+
+    const criteria = { types, tags, roomId, highlight, before, mode, playerId, playerName, search };
+
+    const collection = await this.ensureEventCollection().catch(() => null);
+    if (collection) {
+      try {
+        const filters = [];
+        if (highlight !== undefined) filters.push({ highlight });
+        if (roomId) filters.push({ roomId });
+        if (mode) filters.push({ 'mode.key': mode });
+        if (before) filters.push({ timestampMs: { $lt: before } });
+        if (types.length) filters.push({ type: { $in: types } });
+        if (tags.length) filters.push({ tags: { $in: tags } });
+
+        const participantOr = [];
+        if (playerId) {
+          participantOr.push({ 'participants.killer.id': playerId });
+          participantOr.push({ 'participants.victim.id': playerId });
+          participantOr.push({ 'participants.player.id': playerId });
+          participantOr.push({ 'participants.winner.id': playerId });
+        }
+        if (playerName) {
+          const regex = new RegExp(escapeRegex(playerName), 'i');
+          participantOr.push({ 'participants.killer.name': regex });
+          participantOr.push({ 'participants.victim.name': regex });
+          participantOr.push({ 'participants.player.name': regex });
+          participantOr.push({ 'participants.winner.name': regex });
+        }
+        if (participantOr.length) {
+          filters.push({ $or: participantOr });
+        }
+
+        if (search) {
+          const regex = new RegExp(escapeRegex(search), 'i');
+          filters.push({
+            $or: [
+              { 'feed.message': regex },
+              { 'feed.detail': regex },
+              { 'participants.killer.name': regex },
+              { 'participants.victim.name': regex },
+              { 'participants.player.name': regex },
+              { 'participants.winner.name': regex }
+            ]
+          });
+        }
+
+        const mongoQuery = filters.length === 0 ? {} : filters.length === 1 ? filters[0] : { $and: filters };
+
+        const docs = await collection
+          .find(mongoQuery)
+          .sort({ timestampMs: -1, _id: -1 })
+          .limit(limit + 1)
+          .toArray();
+        const hasMore = docs.length > limit;
+        const trimmed = hasMore ? docs.slice(0, limit) : docs;
+        const items = trimmed.map((doc) => this.normalizeEventLogEntry(doc)).filter(Boolean);
+        const nextCursor = hasMore && trimmed.length ? trimmed[trimmed.length - 1].timestampMs : null;
+        return {
+          items,
+          hasMore,
+          nextCursor,
+          nextCursorIso: nextCursor ? new Date(nextCursor).toISOString() : null,
+          limit,
+          source: 'mongo'
+        };
+      } catch (error) {
+        console.error('이벤트 로그 조회 중 MongoDB 오류 발생, 메모리 로그로 대체합니다.', error.message);
+      }
+    }
+
+    const sorted = [...this.memoryEvents].sort((a, b) => {
+      const aTs = Number.isFinite(a.timestamp) ? a.timestamp : 0;
+      const bTs = Number.isFinite(b.timestamp) ? b.timestamp : 0;
+      return bTs - aTs;
+    });
+    const filtered = sorted.filter((event) => this.memoryEventMatchesCriteria(event, criteria));
+    const sliced = filtered.slice(0, limit);
+    const nextCursor = filtered.length > limit && sliced.length
+      ? Number.isFinite(sliced[sliced.length - 1].timestamp)
+        ? sliced[sliced.length - 1].timestamp
+        : null
+      : null;
+    return {
+      items: sliced.map((event) => this.normalizeEventLogEntry(event)).filter(Boolean),
+      hasMore: filtered.length > limit,
+      nextCursor,
+      nextCursorIso: nextCursor ? new Date(nextCursor).toISOString() : null,
+      limit,
+      source: 'memory'
+    };
   }
 
   async rememberPreference({ name, color, mode }) {
@@ -2171,6 +2451,78 @@ app.get('/api/stats', async (req, res) => {
     });
   } catch (error) {
     res.status(500).json({ error: '통계를 불러오지 못했습니다.' });
+  }
+});
+
+app.get('/api/event-logs', async (req, res) => {
+  const query = req.query || {};
+  const parseMultiValue = (value) => {
+    if (Array.isArray(value)) {
+      return value
+        .flatMap((token) => String(token).split(','))
+        .map((token) => token.trim())
+        .filter(Boolean);
+    }
+    if (typeof value === 'string') {
+      return value
+        .split(',')
+        .map((token) => token.trim())
+        .filter(Boolean);
+    }
+    return [];
+  };
+
+  const types = parseMultiValue(query.type).slice(0, 6);
+  const tags = parseMultiValue(query.tag || query.tags).slice(0, 6);
+  const highlightParam = typeof query.highlight === 'string' ? query.highlight.toLowerCase() : query.highlight;
+  const highlight =
+    highlightParam === 'true' || highlightParam === true
+      ? true
+      : highlightParam === 'false' || highlightParam === false
+        ? false
+        : undefined;
+
+  const options = {
+    limit: query.limit,
+    before: query.before,
+    types,
+    tags,
+    highlight,
+    roomId: typeof query.roomId === 'string' ? query.roomId.trim() : undefined,
+    mode: typeof query.mode === 'string' ? query.mode.trim() : undefined,
+    playerId: typeof query.playerId === 'string' ? query.playerId.trim() : undefined,
+    playerName: typeof query.playerName === 'string' ? query.playerName.trim() : undefined,
+    search: typeof query.search === 'string' ? query.search.trim() : undefined
+  };
+
+  try {
+    const result = await statsStore.findEventLogs(options);
+    res.json({
+      data: result.items,
+      paging: {
+        hasMore: result.hasMore,
+        nextCursor: result.nextCursor,
+        nextCursorIso: result.nextCursorIso,
+        limit: result.limit
+      },
+      meta: {
+        source: result.source,
+        filters: {
+          types,
+          tags,
+          highlight: highlight !== undefined ? highlight : null,
+          roomId: options.roomId || null,
+          mode: options.mode || null,
+          playerId: options.playerId || null,
+          playerName: options.playerName || null,
+          search: options.search || null,
+          before: options.before || null
+        }
+      }
+    });
+  } catch (error) {
+    console.error('이벤트 로그 API 오류:', error.message);
+    res.status(500).json({ error: '이벤트 로그를 불러오지 못했습니다.' });
   }
 });
 

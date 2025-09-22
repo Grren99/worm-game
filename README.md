@@ -95,9 +95,19 @@ npm run loadtest -- --players=32 --duration=90 --mode=battle
 - `InputManager` 가 키보드와 모바일 가상 조이스틱 이벤트를 단일 인터페이스로 추상화하여 플랫폼 별 입력 처리 코드를 단순화합니다
 - `/api/stats` 엔드포인트로 현재까지의 글로벌 통계를 JSON 으로 확인할 수 있습니다
 - `/api/profile/:name` 엔드포인트로 특정 플레이어의 누적 전적을 불러올 수 있습니다 (MongoDB 연결 시 영구 저장)
+- `/api/event-logs` 엔드포인트는 하이라이트 이벤트 로그를 페이지네이션과 타입/태그/플레이어/텍스트 검색 필터와 함께 제공합니다
 - 개발 중에는 `npm run dev` 로 nodemon 감시 실행이 가능합니다
 - WebAudio 믹서 구조와 파워업 사운드 시퀀스는 [`docs/audio/mixer-test-plan.md`](docs/audio/mixer-test-plan.md), [`docs/audio/powerup-sfx.md`](docs/audio/powerup-sfx.md)에 정리되어 있습니다
 - 파워업 HUD 접근성 토글 로직과 스타일은 `public/js/core/ui.js`, `public/styles.css`의 `hud-high-contrast`/`hud-colorblind` 클래스를 참고하세요
+
+## REST API 요약
+- `GET /api/stats`
+  - 응답: `players[]`(이름, 승률, 평균 점수, 평균 생존 시간 등), `updatedAt`
+- `GET /api/profile/:name`
+  - 응답: 플레이어 누적 전적, 최고 점수/킬, 마지막 색상/모드, 업적 집계
+- `GET /api/event-logs`
+  - 쿼리: `limit`(기본 20, 최대 100), `before`(타임스탬프 또는 ISO 문자열), `type`, `tag`, `roomId`, `mode`, `playerId`, `playerName`, `search`, `highlight`
+  - 응답: `data[]`(이벤트 스냅샷), `paging.nextCursor`/`nextCursorIso`/`hasMore`, 적용된 필터와 데이터 소스(`mongo` 또는 `memory`)
 
 ## 문서
 - [`docs/audio/spectator-feedback.md`](docs/audio/spectator-feedback.md): 관전자 전환음 사용자 피드백과 밸런싱 가이드 초안
