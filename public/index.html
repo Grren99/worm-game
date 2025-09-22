@@ -1,0 +1,178 @@
+<!DOCTYPE html>
+<html lang="ko">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>온라인 지렁이 배틀</title>
+    <link rel="stylesheet" href="/styles.css" />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Pretendard:wght@400;600;700&display=swap"
+      rel="stylesheet"
+    />
+  </head>
+  <body>
+    <div class="app">
+      <header class="app__header">
+        <h1>온라인 지렁이 배틀</h1>
+        <div class="status" id="connection-status">서버 연결 대기중...</div>
+        <div class="header-actions">
+          <button id="toggle-audio" class="btn btn--ghost">🔊 사운드 켜기</button>
+          <button id="request-replay" class="btn btn--ghost" disabled>🎞 리플레이</button>
+        </div>
+      </header>
+
+      <main class="app__main">
+        <aside class="panel panel--lobby">
+          <section class="panel__section">
+            <h2>플레이어 정보</h2>
+            <label class="field">
+              <span>닉네임</span>
+              <input id="player-name" maxlength="16" placeholder="지렁군" />
+            </label>
+            <div class="field-row">
+              <button id="quick-join" class="btn btn--primary">빠른 입장</button>
+              <button id="create-room" class="btn btn--secondary">방 만들기</button>
+            </div>
+            <label class="field">
+              <span>비공개 방</span>
+              <input id="private-room-toggle" type="checkbox" />
+            </label>
+            <label class="field">
+              <span>방 검색</span>
+              <div class="field-row">
+                <input id="room-id" placeholder="방 코드" />
+                <button id="join-room" class="btn btn--secondary">입장</button>
+              </div>
+            </label>
+          </section>
+
+          <section class="panel__section">
+            <div class="section-header">
+              <h2>공개 방</h2>
+              <button id="refresh-rooms" class="btn btn--ghost">새로고침</button>
+            </div>
+            <ul id="room-list" class="room-list empty">
+              <li>참여 가능한 방이 없습니다.</li>
+            </ul>
+          </section>
+
+          <section class="panel__section panel__section--stats">
+            <div class="section-header">
+              <h2>랭킹</h2>
+              <span id="stats-updated">-</span>
+            </div>
+            <table class="stats-table" id="stats-table">
+              <thead>
+                <tr>
+                  <th>플레이어</th>
+                  <th>승률</th>
+                  <th>평균 점수</th>
+                  <th>평균 생존</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr>
+                  <td colspan="4" class="empty">통계 데이터를 불러오는 중...</td>
+                </tr>
+              </tbody>
+            </table>
+          </section>
+        </aside>
+
+        <section class="panel panel--game">
+          <div class="canvas-container">
+            <canvas id="game-canvas" width="1600" height="900"></canvas>
+            <div class="game-overlay hidden" id="game-overlay"></div>
+            <div class="countdown" id="countdown"></div>
+          </div>
+          <div class="hud">
+            <div class="hud__section">
+              <h3>현재 생존</h3>
+              <ul id="alive-list" class="pill-list"></ul>
+            </div>
+            <div class="hud__section">
+              <h3>점수판</h3>
+              <table class="scoreboard" id="scoreboard">
+                <thead>
+                  <tr>
+                    <th>플레이어</th>
+                    <th>점수</th>
+                    <th>킬</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr>
+                    <td colspan="3" class="empty">게임에 참여하세요!</td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+            <div class="hud__section">
+              <h3>내 상태</h3>
+              <ul id="player-effects" class="badge-list"></ul>
+              <div id="player-status" class="player-status">대기 중</div>
+            </div>
+          </div>
+        </section>
+
+        <aside class="panel panel--meta">
+          <section class="panel__section notifications">
+            <h2>알림</h2>
+            <ul id="notification-list" class="notification-list"></ul>
+          </section>
+          <section class="panel__section chat">
+            <h2>채팅</h2>
+            <div id="chat-log" class="chat__log"></div>
+            <form id="chat-form" class="chat__input" autocomplete="off">
+              <input id="chat-message" placeholder="메시지를 입력하세요" maxlength="140" />
+              <button class="btn btn--primary" type="submit">전송</button>
+            </form>
+          </section>
+          <section class="panel__section help">
+            <h2>조작법</h2>
+            <ul class="help__list">
+              <li>이동: ← → ↑ ↓ 또는 WASD</li>
+              <li>사운드: 상단 버튼으로 토글</li>
+              <li>리플레이: 게임 종료 후 시청 가능</li>
+              <li>채팅: 메시지 입력 후 Enter</li>
+            </ul>
+          </section>
+        </aside>
+      </main>
+
+      <footer class="app__footer">
+        <span id="mode-indicator">모드: 로비</span>
+        <span id="world-info">맵: 1600 x 900</span>
+        <span id="build-info">빌드 v1.0.0</span>
+      </footer>
+    </div>
+
+    <div class="modal hidden" id="replay-modal">
+      <div class="modal__content">
+        <header class="modal__header">
+          <h2>리플레이</h2>
+          <button id="close-replay" class="btn btn--ghost">닫기</button>
+        </header>
+        <p class="modal__hint">재생 속도와 구간을 조절해 지난 경기를 다시 확인하세요.</p>
+        <div class="replay__controls">
+          <button id="replay-play" class="btn btn--primary">재생</button>
+          <button id="replay-pause" class="btn btn--secondary">일시정지</button>
+          <label class="field">
+            <span>재생 속도</span>
+            <input id="replay-speed" type="range" min="0.25" max="2" step="0.25" value="1" />
+          </label>
+          <label class="field">
+            <span>타임라인</span>
+            <input id="replay-progress" type="range" min="0" max="1" step="0.01" value="0" />
+          </label>
+        </div>
+        <canvas id="replay-canvas" width="1600" height="900"></canvas>
+      </div>
+    </div>
+
+    <script src="/socket.io/socket.io.js"></script>
+    <script type="module" src="/js/main.js"></script>
+  </body>
+</html>
