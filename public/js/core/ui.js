@@ -636,6 +636,9 @@ export class UIManager {
       if (this.elements.tournamentWins) this.elements.tournamentWins.innerHTML = '';
       if (this.elements.tournamentRounds) this.elements.tournamentRounds.textContent = '토너먼트 미진행';
       if (this.elements.tournamentTimer) this.elements.tournamentTimer.textContent = '';
+      if (this.elements.tournamentRoundSummary) {
+        this.elements.tournamentRoundSummary.innerHTML = '<li class="empty">토너먼트를 시작하면 라운드 요약이 표시됩니다.</li>';
+      }
       return;
     }
     container.classList.remove('is-hidden');
@@ -660,6 +663,126 @@ export class UIManager {
         .join('');
       this.elements.tournamentWins.innerHTML = winsMarkup || '<li class="empty">아직 승자가 없습니다</li>';
     }
+    this.renderTournamentRoundSummaries(tournament);
+  }
+
+  renderTournamentRoundSummaries(tournament) {
+    const list = this.elements.tournamentRoundSummary;
+    if (!list) return;
+    if (!tournament?.enabled) {
+      list.innerHTML = '<li class="empty">토너먼트 진행 중이 아닙니다.</li>';
+      return;
+    }
+    const history = Array.isArray(tournament.roundHistory) ? tournament.roundHistory : [];
+    if (!history.length) {
+      list.innerHTML = '<li class="empty">라운드 기록을 기다리는 중...</li>';
+      return;
+    }
+    const items = [...history]
+      .slice(-6)
+      .reverse()
+      .map((entry) => this.buildTournamentRoundSummaryItem(entry))
+      .filter(Boolean);
+    list.innerHTML = items.length ? items.join('') : '<li class="empty">요약할 라운드 데이터가 없습니다.</li>';
+  }
+
+  buildTournamentRoundSummaryItem(entry) {
+    const roundLabel =
+      Number.isFinite(entry.round) && entry.round > 0 ? `${entry.round}라운드` : '라운드';
+    const timestamp = Number.isFinite(entry.timestamp) ? this.formatTime(entry.timestamp) : '';
+    const winnerName = entry.winnerName ? escapeHtml(entry.winnerName) : null;
+    const winnerColor = entry.winnerColor || '#9254de';
+    const winnerMarkup = winnerName
+      ? `<span class="round-summary__winner" style="--winner-accent:${winnerColor}">${winnerName} 승</span>`
+      : '<span class="round-summary__winner round-summary__winner--draw">무승부</span>';
+    const chipsMarkup = this.buildTournamentRoundChips(entry.summary);
+    const rankingMarkup = this.buildTournamentRoundRanking(entry.topStats);
+    const momentsMarkup = this.buildTournamentRoundMoments(entry.keyEvents);
+    return `
+      <li>
+        <header class="round-summary__header">
+          <span class="round-summary__round">${roundLabel}</span>
+          ${winnerMarkup}
+          ${timestamp ? `<time>${timestamp}</time>` : ''}
+        </header>
+        ${chipsMarkup}
+        ${rankingMarkup}
+        ${momentsMarkup}
+      </li>`;
+  }
+
+  buildTournamentRoundChips(summary) {
+    if (!summary) return '';
+    const chips = [];
+    if (summary.topKiller?.name) {
+      const kills = Number.isFinite(summary.topKiller.kills) ? summary.topKiller.kills : 0;
+      chips.push({ icon: '⚔️', text: `${summary.topKiller.name} ${kills}킬` });
+    }
+    if (summary.goldenCollector?.name) {
+      const golden = Number.isFinite(summary.goldenCollector.golden)
+        ? summary.goldenCollector.golden
+        : 0;
+      chips.push({ icon: '✨', text: `${summary.goldenCollector.name} 골든 ${golden}` });
+    }
+    if (summary.survivor?.name) {
+      const survival = Number.isFinite(summary.survivor.survivalSeconds)
+        ? summary.survivor.survivalSeconds
+        : 0;
+      chips.push({ icon: '⏱', text: `${summary.survivor.name} ${survival}s 생존` });
+    }
+    if (!chips.length) return '';
+    const items = chips
+      .map((chip) => {
+        return `
+          <li>
+            <span class="round-summary__chip-icon">${chip.icon}</span>
+            <span>${escapeHtml(chip.text)}</span>
+          </li>`;
+      })
+      .join('');
+    return `<ul class="round-summary__chips">${items}</ul>`;
+  }
+
+  buildTournamentRoundRanking(stats) {
+    if (!Array.isArray(stats) || !stats.length) return '';
+    const items = stats
+      .map((stat, index) => {
+        const color = stat.color || '#40a9ff';
+        const score = Number.isFinite(stat.score) ? stat.score : 0;
+        const kills = Number.isFinite(stat.kills) ? stat.kills : 0;
+        const name = escapeHtml(stat.name || '플레이어');
+        return `
+          <li style="--rank-accent:${color}">
+            <span class="round-summary__rank-index">${index + 1}</span>
+            <span class="round-summary__rank-name">${name}</span>
+            <span class="round-summary__rank-score">${score}점</span>
+            <span class="round-summary__rank-kills">${kills}킬</span>
+          </li>`;
+      })
+      .join('');
+    return `<ol class="round-summary__ranking">${items}</ol>`;
+  }
+
+  buildTournamentRoundMoments(events) {
+    if (!Array.isArray(events) || !events.length) return '';
+    const items = events
+      .map((event) => {
+        const type = escapeHtml(event.type || 'event');
+        const icon = escapeHtml(event.icon || EVENT_ICONS[event.type] || '🪱');
+        const title = escapeHtml(event.title || '이벤트');
+        const detail = event.subtitle ? `<span class="round-summary__moment-detail">${escapeHtml(event.subtitle)}</span>` : '';
+        const accent = event.accent || '#40a9ff';
+        return `
+          <li style="--moment-accent:${accent}" data-type="${type}">
+            <span class="round-summary__moment-icon">${icon}</span>
+            <div class="round-summary__moment-text">
+              <span class="round-summary__moment-title">${title}</span>
+              ${detail}
+            </div>
+          </li>`;
+      })
+      .join('');
+    return `<ul class="round-summary__moments">${items}</ul>`;
   }
 
   getAlivePlayers() {

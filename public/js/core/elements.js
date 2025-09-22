@@ -45,6 +45,7 @@ export const elements = {
   tournamentWins: document.getElementById('tournament-wins'),
   tournamentRounds: document.getElementById('tournament-rounds'),
   tournamentTimer: document.getElementById('tournament-timer'),
+  tournamentRoundSummary: document.getElementById('tournament-round-summary'),
   highlightSummary: document.getElementById('highlight-summary'),
   highlightRecommendations: document.getElementById('highlight-recommendations'),
   highlightRecommendationList: document.getElementById('highlight-recommendation-list'),

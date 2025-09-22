@@ -556,7 +556,8 @@ class RoomState {
           roundsToWin: this.mode.tournament.roundsToWin,
           intermissionSeconds: this.mode.tournament.intermissionSeconds,
           wins: new Map(),
-          championId: null
+          championId: null,
+          roundHistory: []
         }
       : null;
   }
@@ -1019,6 +1020,55 @@ class RoomState {
     }
   }
 
+  recordTournamentRoundSummary({ highlightPackage, winner }) {
+    if (!this.tournament || !highlightPackage) return;
+    const now = Date.now();
+    const summaryEntry = {
+      id: uuidv4(),
+      round: this.round,
+      timestamp: now,
+      winnerId: winner?.id || null,
+      winnerName: winner?.name || null,
+      winnerColor: winner?.color || null,
+      summary: highlightPackage.summary || null,
+      keyEvents: Array.isArray(highlightPackage.keyEvents)
+        ? highlightPackage.keyEvents.slice(0, 4).map((event) => ({
+            id: event.id,
+            type: event.type,
+            title: event.title,
+            subtitle: event.subtitle,
+            icon: event.icon,
+            accent: event.accent,
+            timestamp: event.timestamp || now
+          }))
+        : [],
+      topStats: Array.isArray(highlightPackage.stats)
+        ? [...highlightPackage.stats]
+            .sort((a, b) => b.score - a.score || b.kills - a.kills)
+            .slice(0, 3)
+            .map((stat) => ({
+              playerId: stat.playerId,
+              name: stat.name,
+              color: stat.color,
+              score: stat.score,
+              kills: stat.kills,
+              golden: stat.golden,
+              powerups: stat.powerups,
+              survivalSeconds: stat.survivalSeconds
+            }))
+        : []
+    };
+    this.tournament.roundHistory = this.tournament.roundHistory || [];
+    this.tournament.roundHistory.push(summaryEntry);
+    const maxEntries = Math.max(6, this.tournament.roundsToWin * 2);
+    if (this.tournament.roundHistory.length > maxEntries) {
+      this.tournament.roundHistory.splice(
+        0,
+        this.tournament.roundHistory.length - maxEntries
+      );
+    }
+  }
+
   serializeTournament() {
     if (!this.tournament) return { enabled: false };
     const wins = [...this.tournament.wins.entries()].map(([playerId, winCount]) => {
@@ -1048,6 +1098,71 @@ class RoomState {
       enabled: true,
       roundsToWin: this.tournament.roundsToWin,
       wins,
+      roundHistory: (this.tournament.roundHistory || []).map((entry) => ({
+        id: entry.id,
+        round: entry.round,
+        timestamp: entry.timestamp,
+        winnerId: entry.winnerId,
+        winnerName: entry.winnerName,
+        winnerColor: entry.winnerColor,
+        summary: entry.summary
+          ? {
+              winnerId: entry.summary.winnerId || null,
+              winnerName: entry.summary.winnerName || null,
+              round: entry.summary.round,
+              topKiller: entry.summary.topKiller
+                ? {
+                    playerId: entry.summary.topKiller.playerId,
+                    name: entry.summary.topKiller.name,
+                    color: entry.summary.topKiller.color,
+                    kills: entry.summary.topKiller.kills,
+                    score: entry.summary.topKiller.score
+                  }
+                : null,
+              goldenCollector: entry.summary.goldenCollector
+                ? {
+                    playerId: entry.summary.goldenCollector.playerId,
+                    name: entry.summary.goldenCollector.name,
+                    color: entry.summary.goldenCollector.color,
+                    golden: entry.summary.goldenCollector.golden,
+                    score: entry.summary.goldenCollector.score
+                  }
+                : null,
+              survivor: entry.summary.survivor
+                ? {
+                    playerId: entry.summary.survivor.playerId,
+                    name: entry.summary.survivor.name,
+                    color: entry.summary.survivor.color,
+                    survivalSeconds: entry.summary.survivor.survivalSeconds,
+                    score: entry.summary.survivor.score
+                  }
+                : null
+            }
+          : null,
+        keyEvents: Array.isArray(entry.keyEvents)
+          ? entry.keyEvents.map((event) => ({
+              id: event.id,
+              type: event.type,
+              title: event.title,
+              subtitle: event.subtitle,
+              icon: event.icon,
+              accent: event.accent,
+              timestamp: event.timestamp
+            }))
+          : [],
+        topStats: Array.isArray(entry.topStats)
+          ? entry.topStats.map((stat) => ({
+              playerId: stat.playerId,
+              name: stat.name,
+              color: stat.color,
+              score: stat.score,
+              kills: stat.kills,
+              golden: stat.golden,
+              powerups: stat.powerups,
+              survivalSeconds: stat.survivalSeconds
+            }))
+          : []
+      })),
       championId: this.tournament.championId,
       lastWinnerId: this.tournament.lastWinnerId || null,
       currentRound: this.round,
@@ -1132,11 +1247,13 @@ class RoomState {
         const earned = achievementMap.get(player.id) || [];
         this.recordGlobalStats(player, isChampion || isWinner, earned);
       }
+      const highlightPackage = this.buildHighlightPackage({ winner });
+      this.recordTournamentRoundSummary({ highlightPackage, winner });
       this.broadcast('game:ended', {
         winnerId: winner?.id || null,
         leaderboard: this.buildLeaderboard(),
         tournament: this.serializeTournament(),
-        highlights: this.buildHighlightPackage({ winner }),
+        highlights: highlightPackage,
         achievements: this.serializeAchievements(achievementMap)
       });
       if (this.tournament && !this.tournament.championId && this.players.size >= 2) {
@@ -1433,10 +1550,23 @@ class RoomState {
         frames
       };
     });
+    const keyEvents = selectedEvents.map((event) => {
+      const descriptor = this.describeHighlight(event);
+      return {
+        id: event.id,
+        type: event.type,
+        title: descriptor.title,
+        subtitle: descriptor.subtitle,
+        icon: this.resolveMarkerIcon(event),
+        accent: this.resolveMarkerAccent(event),
+        timestamp: event.timestamp || Date.now()
+      };
+    });
     return {
       clips,
       stats,
-      summary: this.buildRoundSummary(stats, winner)
+      summary: this.buildRoundSummary(stats, winner),
+      keyEvents
     };
   }
 
