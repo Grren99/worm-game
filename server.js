@@ -177,6 +177,7 @@ const GAME_MODES = {
 const MONGODB_URI = process.env.MONGODB_URI || '';
 const MONGODB_DB = process.env.MONGODB_DB || 'online_worm_battle';
 const MONGODB_COLLECTION = process.env.MONGODB_COLLECTION || 'player_stats';
+const MONGODB_EVENT_COLLECTION = process.env.MONGODB_EVENT_COLLECTION || 'event_logs';
 
 const app = express();
 const server = http.createServer(app);
@@ -211,6 +212,11 @@ class StatsStore {
     this.mongoCollectionName = MONGODB_COLLECTION;
     this.client = null;
     this.collection = null;
+    this.db = null;
+    this.mongoEventCollectionName = MONGODB_EVENT_COLLECTION;
+    this.eventCollection = null;
+    this.memoryEvents = [];
+    this.eventBufferLimit = 400;
     this.connectPromise = null;
   }
 
@@ -224,16 +230,37 @@ class StatsStore {
       })
         .then((client) => {
           this.client = client;
-          this.collection = client.db(this.mongoDbName).collection(this.mongoCollectionName);
+          this.db = client.db(this.mongoDbName);
+          this.collection = this.db.collection(this.mongoCollectionName);
+          this.eventCollection = this.db.collection(this.mongoEventCollectionName);
           return this.collection;
         })
         .catch((error) => {
           console.error('MongoDB 연결 실패, 메모리 통계를 사용합니다.', error.message);
           this.collection = null;
+          this.eventCollection = null;
+          this.db = null;
           return null;
         });
     }
     return this.connectPromise;
+  }
+
+  async ensureEventCollection() {
+    if (this.eventCollection) return this.eventCollection;
+    const baseCollection = await this.ensureConnection();
+    if (!baseCollection || !this.client) {
+      return null;
+    }
+    try {
+      this.db = this.db || this.client.db(this.mongoDbName);
+      this.eventCollection = this.db.collection(this.mongoEventCollectionName);
+      return this.eventCollection;
+    } catch (error) {
+      console.error('MongoDB 이벤트 로그 컬렉션 확보 실패, 메모리 로그를 사용합니다.', error.message);
+      this.eventCollection = null;
+      return null;
+    }
   }
 
   buildEmptyProfile(name) {
@@ -317,6 +344,116 @@ class StatsStore {
       await collection.updateOne({ name: entry.name }, update, { upsert: true });
     } catch (error) {
       console.error('MongoDB 통계 저장 실패, 메모리 통계로 대체합니다.', error.message);
+    }
+  }
+
+  sanitizeEventLogEntry(raw) {
+    if (!raw || typeof raw !== 'object') return null;
+    const timestamp = Number.isFinite(raw.timestamp) ? raw.timestamp : Date.now();
+    const base = {
+      eventId: typeof raw.eventId === 'string' ? raw.eventId : raw.id || uuidv4(),
+      type: typeof raw.type === 'string' ? raw.type : 'event',
+      roomId: typeof raw.roomId === 'string' ? raw.roomId : null,
+      roomName: typeof raw.roomName === 'string' ? raw.roomName : null,
+      round: Number.isFinite(raw.round) ? raw.round : null,
+      mode: raw.mode || null,
+      timestamp,
+      highlight: Boolean(raw.highlight),
+      tags: Array.isArray(raw.tags) ? raw.tags.slice(0, 12).map((tag) => String(tag).slice(0, 32)) : [],
+      participants:
+        raw.participants && typeof raw.participants === 'object'
+          ? Object.entries(raw.participants).reduce((acc, [key, value]) => {
+              if (!value || typeof value !== 'object') return acc;
+              const participant = {
+                id: typeof value.id === 'string' ? value.id : null,
+                name: typeof value.name === 'string' ? value.name : null,
+                color: typeof value.color === 'string' ? value.color : null
+              };
+              acc[key] = participant;
+              return acc;
+            }, {})
+          : {},
+      meta:
+        raw.meta && typeof raw.meta === 'object'
+          ? {
+              cause: typeof raw.meta.cause === 'string' ? raw.meta.cause : null,
+              powerup: typeof raw.meta.powerup === 'string' ? raw.meta.powerup : null,
+              score: Number.isFinite(raw.meta.score) ? raw.meta.score : null
+            }
+          : {},
+      feed:
+        raw.feed && typeof raw.feed === 'object'
+          ? {
+              type: typeof raw.feed.type === 'string' ? raw.feed.type : null,
+              message: typeof raw.feed.message === 'string' ? raw.feed.message : null,
+              detail: typeof raw.feed.detail === 'string' ? raw.feed.detail : null,
+              accent: typeof raw.feed.accent === 'string' ? raw.feed.accent : null,
+              primaryId: typeof raw.feed.primaryId === 'string' ? raw.feed.primaryId : null,
+              secondaryId: typeof raw.feed.secondaryId === 'string' ? raw.feed.secondaryId : null
+            }
+          : null,
+      context:
+        raw.context && typeof raw.context === 'object'
+          ? {
+              phase: typeof raw.context.phase === 'string' ? raw.context.phase : null,
+              playerCount: Number.isFinite(raw.context.playerCount) ? raw.context.playerCount : null,
+              aliveCount: Number.isFinite(raw.context.aliveCount) ? raw.context.aliveCount : null,
+              spectatorCount: Number.isFinite(raw.context.spectatorCount) ? raw.context.spectatorCount : null,
+              leaderboard: Array.isArray(raw.context.leaderboard)
+                ? raw.context.leaderboard.slice(0, 6).map((row) => ({
+                    id: typeof row.id === 'string' ? row.id : null,
+                    name: typeof row.name === 'string' ? row.name : null,
+                    score: Number.isFinite(row.score) ? row.score : null,
+                    kills: Number.isFinite(row.kills) ? row.kills : null,
+                    alive: typeof row.alive === 'boolean' ? row.alive : null,
+                    color: typeof row.color === 'string' ? row.color : null
+                  }))
+                : [],
+              tournament:
+                raw.context.tournament && typeof raw.context.tournament === 'object'
+                  ? {
+                      roundsToWin: Number.isFinite(raw.context.tournament.roundsToWin)
+                        ? raw.context.tournament.roundsToWin
+                        : null,
+                      championId:
+                        typeof raw.context.tournament.championId === 'string'
+                          ? raw.context.tournament.championId
+                          : null,
+                      wins: Array.isArray(raw.context.tournament.wins)
+                        ? raw.context.tournament.wins.slice(0, 12).map((item) => ({
+                            playerId: typeof item.playerId === 'string' ? item.playerId : null,
+                            winCount: Number.isFinite(item.winCount) ? item.winCount : null
+                          }))
+                        : []
+                    }
+                  : null
+            }
+          : {},
+      payload: raw.payload && typeof raw.payload === 'object' ? { ...raw.payload } : null
+    };
+    return base;
+  }
+
+  async recordEventLog(entry) {
+    const sanitized = this.sanitizeEventLogEntry(entry);
+    if (!sanitized) return;
+    this.memoryEvents.push(sanitized);
+    if (this.memoryEvents.length > this.eventBufferLimit) {
+      this.memoryEvents.splice(0, this.memoryEvents.length - this.eventBufferLimit);
+    }
+    const collection = await this.ensureEventCollection();
+    if (!collection) return;
+    try {
+      const timestampMs = Number.isFinite(sanitized.timestamp) ? sanitized.timestamp : Date.now();
+      const doc = {
+        ...sanitized,
+        timestamp: new Date(timestampMs),
+        timestampMs,
+        createdAt: new Date()
+      };
+      await collection.insertOne(doc);
+    } catch (error) {
+      console.error('MongoDB 이벤트 로그 저장 실패, 메모리 로그를 유지합니다.', error.message);
     }
   }
 
@@ -598,7 +735,96 @@ class RoomState {
     if (feedEntry) {
       this.pushEventFeed(feedEntry);
     }
+    this.persistHighlight(entry, feedEntry);
     return entry;
+  }
+
+  serializeParticipant(id, fallbackName, fallbackColor) {
+    if (!id) return null;
+    const player = this.players.get(id);
+    return {
+      id,
+      name: player?.name || fallbackName || null,
+      color: player?.color || fallbackColor || null
+    };
+  }
+
+  persistHighlight(entry, feedEntry) {
+    if (!entry) return;
+    try {
+      const participants = {};
+      const assignParticipant = (key, id, name, color) => {
+        const participant = this.serializeParticipant(id, name, color);
+        if (participant) participants[key] = participant;
+      };
+      assignParticipant('killer', entry.killerId, entry.killerName, entry.killerColor);
+      assignParticipant('victim', entry.victimId, entry.victimName, entry.victimColor);
+      assignParticipant('player', entry.playerId, entry.playerName, entry.playerColor);
+      assignParticipant('winner', entry.winnerId, entry.winnerName, entry.winnerColor);
+
+      const leaderboardSnapshot = this.buildLeaderboard()
+        .slice(0, 5)
+        .map((row) => ({
+          id: row.id,
+          name: row.name,
+          score: row.score,
+          kills: row.kills,
+          alive: row.alive,
+          color: row.color
+        }));
+
+      const logPayload = {
+        eventId: entry.id,
+        type: entry.type,
+        timestamp: entry.timestamp,
+        roomId: this.id,
+        roomName: this.name,
+        mode: {
+          key: this.modeKey,
+          label: this.mode.label
+        },
+        round: Number.isFinite(entry.round) ? entry.round : this.round,
+        highlight: true,
+        tags: this.deriveHighlightTags(entry),
+        participants,
+        meta: {
+          cause: entry.cause || null,
+          powerup: entry.powerup || null,
+          score: Number.isFinite(entry.score) ? entry.score : null
+        },
+        feed: feedEntry
+          ? {
+              type: feedEntry.type,
+              message: feedEntry.message,
+              detail: feedEntry.detail,
+              accent: feedEntry.accent,
+              primaryId: feedEntry.primaryId || null,
+              secondaryId: feedEntry.secondaryId || null
+            }
+          : null,
+        context: {
+          phase: this.phase,
+          playerCount: this.players.size,
+          aliveCount: [...this.players.values()].filter((player) => player.alive).length,
+          spectatorCount: this.spectators.size,
+          leaderboard: leaderboardSnapshot,
+          tournament: this.tournament
+            ? {
+                roundsToWin: this.tournament.roundsToWin,
+                championId: this.tournament.championId || null,
+                wins: [...this.tournament.wins.entries()].map(([playerId, winCount]) => ({
+                  playerId,
+                  winCount
+                }))
+              }
+            : null
+        }
+      };
+
+      statsStore.recordEventLog(logPayload);
+    } catch (error) {
+      console.error('이벤트 로그 영구 저장 준비에 실패했습니다.', error.message);
+    }
   }
 
   buildEventFeedEntry(event) {

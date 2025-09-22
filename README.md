@@ -23,6 +23,7 @@
 - ⭐ **즐겨찾기 & 공유**: 마음에 드는 하이라이트를 즐겨찾기에 저장하고 검색/태그 필터로 정리하며, JSON으로 내보내거나 가져와 공유 가능
 - 🏅 **라운드 업적**: 킬·골든 음식·파워업 기록을 업적으로 요약해 메타 패널에 표시
 - 📊 **랭킹 & 통계**: 승리 횟수, 평균 점수, 생존 시간 기반으로 글로벌 통계 제공
+- 🗃 **이벤트 아카이브**: 모든 하이라이트 이벤트를 MongoDB에 영구 저장해 리플레이/분석 자료로 활용
 - 📇 **개인 프로필**: MongoDB에 저장된 누적 전적을 불러와 내 상태 패널에서 즉시 확인
 - 🧪 **부하 테스트 도구**: `npm run loadtest` 로 최대 수십 명의 가상 플레이어를 시뮬레이션
 - 🤖 **스마트 추천**: 라운드 태그·플레이어 정보 기반 추천 알고리즘으로 볼만한 하이라이트를 자동 큐레이션
@@ -35,6 +36,7 @@ npm install
 # export MONGODB_URI="mongodb+srv://user:password@cluster.mongodb.net/?retryWrites=true&w=majority"
 # export MONGODB_DB="online_worm_battle"
 # export MONGODB_COLLECTION="player_stats"
+# export MONGODB_EVENT_COLLECTION="event_logs" # (선택) 이벤트 로그를 저장할 컬렉션명
 npm start
 ```
 
@@ -100,13 +102,15 @@ npm run loadtest -- --players=32 --duration=90 --mode=battle
 - [`docs/audio/spectator-feedback.md`](docs/audio/spectator-feedback.md): 관전자 전환음 사용자 피드백과 밸런싱 가이드 초안
 - [`docs/audio/powerup-warning-ab-test.md`](docs/audio/powerup-warning-ab-test.md): 파워업 경고 사운드 밸런싱 A/B 테스트 계획
 - [`docs/audio/ios-safari-audio-qa.md`](docs/audio/ios-safari-audio-qa.md): iOS Safari 오디오 호환성 QA 체크리스트
+- [`docs/event-log-schema.md`](docs/event-log-schema.md): 하이라이트 이벤트 MongoDB 스키마 초안과 샘플 도큐먼트
 
 ## 환경 변수
 - `MONGODB_URI`: MongoDB 연결 문자열. 설정하지 않으면 서버 메모리에 통계를 보관합니다.
 - `MONGODB_DB`: 사용할 데이터베이스 이름 (기본값 `online_worm_battle`).
 - `MONGODB_COLLECTION`: 플레이어 통계를 저장할 컬렉션 이름 (기본값 `player_stats`).
+- `MONGODB_EVENT_COLLECTION`: 하이라이트 이벤트 로그 컬렉션 이름 (기본값 `event_logs`).
 
-MongoDB가 연결되면 게임 종료 시 각 플레이어의 점수/생존/킬/선호 색상이 자동으로 영구 저장되고, 로비의 **내 상태** 영역과 REST API를 통해 즉시 확인할 수 있습니다.
+MongoDB가 연결되면 게임 종료 시 각 플레이어의 점수/생존/킬/선호 색상이 자동으로 영구 저장되고, 로비의 **내 상태** 영역과 REST API를 통해 즉시 확인할 수 있습니다. 또한 하이라이트 이벤트는 실시간으로 `event_logs` 컬렉션에 적재돼 리플레이 큐레이션이나 경기 후 분석에 활용할 수 있습니다.
 
 ## 향후 아이디어
 - 통합 계정/친구 초대 시스템 연동
