@@ -27,6 +27,27 @@ const ESCAPE_MAP = {
 const escapeHtml = (value) =>
   String(value ?? '').replace(/[&<>"']/g, (char) => ESCAPE_MAP[char] || char);
 
+const HIGHLIGHT_TAG_LABELS = new Map([
+  ['kill', '킬'],
+  ['combat', '전투'],
+  ['collision', '충돌'],
+  ['first-kill', '퍼스트 킬'],
+  ['powerup', '파워업'],
+  ['powerup:speed', '파워업: 속도'],
+  ['powerup:shield', '파워업: 무적'],
+  ['powerup:shrink', '파워업: 축소'],
+  ['golden', '골든 음식'],
+  ['food', '먹이'],
+  ['growth', '성장'],
+  ['round-end', '라운드'],
+  ['summary', '라운드 요약'],
+  ['victory', '승리'],
+  ['draw', '무승부'],
+  ['my-play', '내 플레이'],
+  ['my-death', '내 탈락'],
+  ['my-win', '내 승리']
+]);
+
 export class UIManager {
   constructor({ state, elements, socket, audio, highlightLibrary }) {
     this.state = state;
@@ -460,6 +481,198 @@ export class UIManager {
     return this.highlightLibrary?.get(id) || null;
   }
 
+  getHighlightFilters() {
+    if (!this.state.highlights.filters || typeof this.state.highlights.filters !== 'object') {
+      this.state.highlights.filters = { query: '', tags: [] };
+    }
+    if (!Array.isArray(this.state.highlights.filters.tags)) {
+      this.state.highlights.filters.tags = [];
+    }
+    return this.state.highlights.filters;
+  }
+
+  renderHighlightFilters() {
+    const filters = this.getHighlightFilters();
+    if (this.elements.highlightSearch) {
+      this.elements.highlightSearch.value = filters.query || '';
+    }
+    if (Array.isArray(this.elements.highlightTagButtons)) {
+      this.elements.highlightTagButtons.forEach((button) => {
+        const tag = button.dataset.tag;
+        const active = filters.tags.includes(tag);
+        button.classList.toggle('is-active', active);
+        button.setAttribute('aria-pressed', active ? 'true' : 'false');
+      });
+    }
+  }
+
+  updateHighlightSearch(query) {
+    const filters = this.getHighlightFilters();
+    filters.query = (query || '').trim();
+    this.renderHighlights();
+  }
+
+  toggleHighlightTag(tag) {
+    if (!tag) return;
+    const filters = this.getHighlightFilters();
+    const index = filters.tags.indexOf(tag);
+    if (index >= 0) {
+      filters.tags.splice(index, 1);
+    } else {
+      filters.tags.push(tag);
+    }
+    this.renderHighlightFilters();
+    this.renderHighlights();
+  }
+
+  buildClipTags(clip) {
+    const tags = new Set();
+    const push = (value) => {
+      if (!value) return;
+      const normalized = String(value).trim().toLowerCase();
+      if (normalized) tags.add(normalized);
+    };
+    if (Array.isArray(clip?.tags)) {
+      clip.tags.forEach(push);
+    }
+    const meta = clip?.meta || {};
+    const type = String(clip?.type || '').toLowerCase();
+    switch (type) {
+      case 'kill':
+        push('kill');
+        push('combat');
+        if (meta.cause) push(meta.cause);
+        if (meta.killerId === this.state.playerId) push('my-play');
+        if (meta.victimId === this.state.playerId) push('my-death');
+        break;
+      case 'powerup':
+        push('powerup');
+        if (meta.powerup) push(`powerup:${meta.powerup}`);
+        if (meta.playerId === this.state.playerId) push('my-play');
+        break;
+      case 'golden-food':
+        push('golden');
+        push('food');
+        push('growth');
+        if (meta.playerId === this.state.playerId) push('my-play');
+        break;
+      case 'round-end':
+        push('round-end');
+        push('summary');
+        if (meta.winnerId) push('victory');
+        if (!meta.winnerId) push('draw');
+        if (meta.winnerId === this.state.playerId) push('my-win');
+        break;
+      default:
+        break;
+    }
+    if (meta.powerup) {
+      push('powerup');
+      push(`powerup:${meta.powerup}`);
+    }
+    return [...tags].filter((tag) => tag && tag !== 'highlight');
+  }
+
+  formatHighlightTag(tag) {
+    if (!tag) return '';
+    if (HIGHLIGHT_TAG_LABELS.has(tag)) {
+      return HIGHLIGHT_TAG_LABELS.get(tag);
+    }
+    if (tag.startsWith('powerup:')) {
+      const [, type] = tag.split(':');
+      if (type) {
+        const label = HIGHLIGHT_TAG_LABELS.get(`powerup:${type}`);
+        return label || `파워업: ${type.toUpperCase()}`;
+      }
+      return '파워업';
+    }
+    return tag.replace(/-/g, ' ');
+  }
+
+  renderClipTags(clip) {
+    const tags = this.buildClipTags(clip);
+    if (!tags.length) return '';
+    const badges = tags
+      .map((tag) => {
+        const label = escapeHtml(this.formatHighlightTag(tag));
+        return `<span class="highlight-tag" data-tag="${tag}">${label}</span>`;
+      })
+      .join('');
+    return `<div class="highlight-card__tags">${badges}</div>`;
+  }
+
+  buildClipSearchText(clip) {
+    const meta = clip?.meta || {};
+    const parts = [clip?.title, clip?.subtitle];
+    const names = [meta.killerName, meta.victimName, meta.playerName, meta.winnerName];
+    names.forEach((value) => {
+      if (value) parts.push(value);
+    });
+    return parts
+      .filter(Boolean)
+      .map((value) => String(value).toLowerCase())
+      .join(' ');
+  }
+
+  clipMatchesFilters(clip, filters = this.getHighlightFilters()) {
+    if (!clip) return false;
+    const tags = this.buildClipTags(clip);
+    if (filters.tags.length) {
+      const missing = filters.tags.some((tag) => !tags.includes(tag));
+      if (missing) return false;
+    }
+    const query = (filters.query || '').trim().toLowerCase();
+    if (query) {
+      const haystack = this.buildClipSearchText(clip);
+      if (!haystack.includes(query)) return false;
+    }
+    return true;
+  }
+
+  collectFilteredHighlightEntries(clips = []) {
+    const filters = this.getHighlightFilters();
+    const results = [];
+    clips.forEach((clip, index) => {
+      if (this.clipMatchesFilters(clip, filters)) {
+        results.push({ clip, index });
+      }
+    });
+    return results;
+  }
+
+  filterFavoriteClips(favorites = []) {
+    const filters = this.getHighlightFilters();
+    return favorites.filter((clip) => this.clipMatchesFilters(clip, filters));
+  }
+
+  async handleHighlightImport(file) {
+    if (!file) return;
+    if (!this.highlightLibrary) {
+      this.notify('즐겨찾기 저장소를 사용할 수 없습니다.', 'warn');
+      return;
+    }
+    try {
+      const text = await file.text();
+      const data = JSON.parse(text);
+      const clip = data?.clip ? { ...data.clip } : { ...data };
+      if (!clip || !Array.isArray(clip.frames) || !clip.frames.length) {
+        throw new Error('invalid clip');
+      }
+      clip.id = clip.id || `import-${crypto.randomUUID()}`;
+      clip.timestamp = clip.timestamp || Date.now();
+      if (!Array.isArray(clip.tags) || !clip.tags.length) {
+        clip.tags = this.buildClipTags(clip);
+      }
+      this.highlightLibrary.add(clip);
+      this.syncHighlightFavorites();
+      this.renderHighlights();
+      this.notify('하이라이트 JSON을 가져와 즐겨찾기에 저장했습니다.', 'success');
+    } catch (error) {
+      console.error('Failed to import highlight clip', error);
+      this.notify('JSON 하이라이트를 불러오지 못했습니다.', 'error');
+    }
+  }
+
   renderHighlights() {
     if (!this.elements.highlightList || !this.elements.highlightSummary) return;
     const data = this.state.highlights || {};
@@ -467,6 +680,7 @@ export class UIManager {
     const summary = data.summary || null;
     const favorites = new Set((this.state.highlights?.favorites || []).map((entry) => entry.id));
 
+    this.renderHighlightFilters();
     this.renderFavoriteHighlights();
 
     if (!summary) {
@@ -495,8 +709,14 @@ export class UIManager {
       return;
     }
 
-    this.elements.highlightList.innerHTML = clips
-      .map((clip, index) => {
+    const entries = this.collectFilteredHighlightEntries(clips);
+    if (!entries.length) {
+      this.elements.highlightList.innerHTML = '<li class="empty">선택한 필터와 일치하는 하이라이트가 없습니다.</li>';
+      return;
+    }
+
+    this.elements.highlightList.innerHTML = entries
+      .map(({ clip, index }) => {
         const isFavorite = favorites.has(clip.id);
         return `
         <li>
@@ -504,6 +724,7 @@ export class UIManager {
             <button type="button" class="highlight-card__body" data-action="play" data-index="${index}">
               <span class="title">${clip.title || '하이라이트'}</span>
               <span class="subtitle">${clip.subtitle || ''}</span>
+              ${this.renderClipTags(clip)}
             </button>
             <div class="highlight-card__actions">
               <button
@@ -541,7 +762,7 @@ export class UIManager {
           this.notify('하이라이트를 찾을 수 없습니다.', 'warn');
           return;
         }
-        const clip = clips[index];
+        const clip = (this.state.highlights?.clips || [])[index];
         this.playHighlightClip(clip);
       });
     });
@@ -566,6 +787,13 @@ export class UIManager {
         this.exportHighlightClip(id);
       });
     });
+
+    this.elements.highlightList.querySelectorAll('.highlight-tag').forEach((tagButton) => {
+      tagButton.addEventListener('click', (event) => {
+        event.preventDefault();
+        this.toggleHighlightTag(tagButton.dataset.tag);
+      });
+    });
   }
 
   renderFavoriteHighlights() {
@@ -576,7 +804,12 @@ export class UIManager {
       list.innerHTML = '<li class="empty">즐겨찾은 클립이 없습니다.</li>';
       return;
     }
-    list.innerHTML = favorites
+    const filtered = this.filterFavoriteClips(favorites);
+    if (!filtered.length) {
+      list.innerHTML = '<li class="empty">필터 조건에 맞는 즐겨찾기 클립이 없습니다.</li>';
+      return;
+    }
+    list.innerHTML = filtered
       .map(
         (clip) => `
         <li>
@@ -584,6 +817,7 @@ export class UIManager {
             <button type="button" class="highlight-card__body" data-action="play" data-highlight-id="${clip.id}">
               <span class="title">${clip.title || '하이라이트'}</span>
               <span class="subtitle">${clip.subtitle || ''}</span>
+              ${this.renderClipTags(clip)}
             </button>
             <div class="highlight-card__actions">
               <button
@@ -641,6 +875,13 @@ export class UIManager {
         this.exportHighlightClip(id);
       });
     });
+
+    list.querySelectorAll('.highlight-tag').forEach((tagButton) => {
+      tagButton.addEventListener('click', (event) => {
+        event.preventDefault();
+        this.toggleHighlightTag(tagButton.dataset.tag);
+      });
+    });
   }
 
   toggleHighlightFavorite(id) {
@@ -657,6 +898,9 @@ export class UIManager {
       if (!clip || !Array.isArray(clip.frames) || !clip.frames.length) {
         this.notify('하이라이트 데이터를 찾을 수 없습니다.', 'warn');
         return;
+      }
+      if (!Array.isArray(clip.tags) || !clip.tags.length) {
+        clip.tags = this.buildClipTags(clip);
       }
       this.highlightLibrary.add(clip);
       this.notify('즐겨찾기에 추가했습니다.', 'success');
@@ -711,6 +955,8 @@ export class UIManager {
         round: clip.round || null,
         timestamp: clip.timestamp || Date.now(),
         meta: clip.meta || null,
+        type: clip.type || null,
+        tags: Array.isArray(clip.tags) && clip.tags.length ? clip.tags : this.buildClipTags(clip),
         frames: clip.frames
       }
     };
@@ -924,6 +1170,33 @@ export class UIManager {
       this.elements.clearHighlightFavorites.addEventListener('click', () =>
         this.handleClearFavoriteRequest()
       );
+    }
+
+    if (this.elements.highlightSearch) {
+      this.elements.highlightSearch.addEventListener('input', (event) => {
+        this.updateHighlightSearch(event.target.value);
+      });
+    }
+
+    if (Array.isArray(this.elements.highlightTagButtons)) {
+      this.elements.highlightTagButtons.forEach((button) => {
+        button.addEventListener('click', () => {
+          this.toggleHighlightTag(button.dataset.tag);
+        });
+      });
+    }
+
+    if (this.elements.highlightImportButton && this.elements.highlightImportInput) {
+      this.elements.highlightImportButton.addEventListener('click', () => {
+        this.elements.highlightImportInput.click();
+      });
+      this.elements.highlightImportInput.addEventListener('change', async (event) => {
+        const [file] = event.target.files || [];
+        if (file) {
+          await this.handleHighlightImport(file);
+        }
+        event.target.value = '';
+      });
     }
 
     if (this.elements.replayButton) {

@@ -143,6 +143,30 @@
               <ul id="tournament-wins" class="badge-list"></ul>
               <div class="tournament__highlights">
                 <h4>라운드 하이라이트</h4>
+                <div class="highlight-controls">
+                  <div class="highlight-controls__search">
+                    <input
+                      id="highlight-search"
+                      type="search"
+                      placeholder="제목 또는 플레이어 검색"
+                      autocomplete="off"
+                    />
+                  </div>
+                  <div class="highlight-controls__actions">
+                    <div id="highlight-tag-filters" class="highlight-tag-filters">
+                      <button type="button" data-tag="kill" class="tag-filter" aria-pressed="false">킬</button>
+                      <button type="button" data-tag="powerup" class="tag-filter" aria-pressed="false">파워업</button>
+                      <button type="button" data-tag="golden" class="tag-filter" aria-pressed="false">골든</button>
+                      <button type="button" data-tag="round-end" class="tag-filter" aria-pressed="false">라운드</button>
+                    </div>
+                    <div class="highlight-controls__import">
+                      <input id="highlight-import-input" type="file" accept="application/json" hidden />
+                      <button id="highlight-import-button" type="button" class="btn btn--ghost btn--tiny">
+                        JSON 가져오기
+                      </button>
+                    </div>
+                  </div>
+                </div>
                 <div id="highlight-summary" class="highlight-summary">데이터를 기다리는 중...</div>
                 <ul id="tournament-highlights" class="highlight-list">
                   <li class="empty">하이라이트가 준비되면 여기에 표시됩니다.</li>

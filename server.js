@@ -1277,6 +1277,7 @@ class RoomState {
       const endFrame = Math.min(lastFrameIndex, (event.frameIndex || 0) + windowFrames);
       const frames = this.frameHistory.slice(startFrame, endFrame + 1);
       const { title, subtitle } = this.describeHighlight(event);
+      const tags = this.deriveHighlightTags(event);
       return {
         id: event.id,
         type: event.type,
@@ -1288,10 +1289,17 @@ class RoomState {
         round: event.round,
         meta: {
           killerId: event.killerId || null,
+          killerName: event.killerName || null,
           victimId: event.victimId || null,
+          victimName: event.victimName || null,
           powerup: event.powerup || null,
-          playerId: event.playerId || null
+          playerName: event.playerName || null,
+          playerId: event.playerId || null,
+          winnerId: event.winnerId || null,
+          winnerName: event.winnerName || null,
+          cause: event.cause || null
         },
+        tags,
         frames
       };
     });
@@ -1300,6 +1308,40 @@ class RoomState {
       stats,
       summary: this.buildRoundSummary(stats, winner)
     };
+  }
+
+  deriveHighlightTags(event) {
+    const tags = new Set(['highlight']);
+    switch (event.type) {
+      case 'kill':
+        tags.add('kill');
+        tags.add('combat');
+        if (event.cause === 'collision') tags.add('collision');
+        if (event.cause === 'self') tags.add('self-hit');
+        if (event.cause === 'wall') tags.add('wall');
+        if (event.killerId && event.killerId === this.firstKillAwardedTo) {
+          tags.add('first-kill');
+        }
+        break;
+      case 'golden-food':
+        tags.add('golden');
+        tags.add('food');
+        tags.add('growth');
+        break;
+      case 'powerup':
+        tags.add('powerup');
+        if (event.powerup) tags.add(`powerup:${event.powerup}`);
+        break;
+      case 'round-end':
+        tags.add('round-end');
+        tags.add('summary');
+        if (event.winnerId) tags.add('victory');
+        if (!event.winnerId) tags.add('draw');
+        break;
+      default:
+        break;
+    }
+    return [...tags];
   }
 
   pushFrame(state) {

@@ -62,7 +62,11 @@ export const initialState = () => ({
     clips: [],
     summary: null,
     stats: [],
-    favorites: []
+    favorites: [],
+    filters: {
+      query: '',
+      tags: []
+    }
   },
   achievements: [],
   audioEnabled: false,

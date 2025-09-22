@@ -1,6 +1,23 @@
 const STORAGE_KEY = 'online-worm-battle.highlightFavorites.v1';
 const MAX_FAVORITES = 10;
 
+const normalizeTags = (source) => {
+  if (!source) return [];
+  const raw = Array.isArray(source.tags)
+    ? source.tags
+    : Array.isArray(source.meta?.tags)
+    ? source.meta.tags
+    : [];
+  const normalized = [];
+  raw.forEach((tag) => {
+    if (typeof tag !== 'string') return;
+    const value = tag.trim().toLowerCase();
+    if (!value || normalized.includes(value)) return;
+    normalized.push(value);
+  });
+  return normalized;
+};
+
 const safeParse = (value) => {
   try {
     return JSON.parse(value);
@@ -24,7 +41,11 @@ export class HighlightLibrary {
     if (!parsed || !Array.isArray(parsed.items)) return;
     parsed.items.forEach((item) => {
       if (!item || !item.id) return;
-      this.favorites.set(item.id, item);
+      const tags = normalizeTags(item);
+      this.favorites.set(item.id, {
+        ...item,
+        tags
+      });
     });
   }
 
@@ -64,8 +85,22 @@ export class HighlightLibrary {
       round: clip.round || null,
       savedAt: Date.now(),
       frames: Array.isArray(clip.frames) ? clip.frames : [],
-      meta: clip.meta || null
+      meta: clip.meta || null,
+      type: clip.type || null,
+      tags: normalizeTags(clip)
     };
+    if (!entry.tags.length && typeof clip.type === 'string') {
+      entry.tags = [clip.type.toLowerCase()];
+    }
+    if (clip.meta?.powerup) {
+      const powerTag = `powerup:${String(clip.meta.powerup).toLowerCase()}`;
+      if (!entry.tags.includes(powerTag)) entry.tags.push(powerTag);
+      if (!entry.tags.includes('powerup')) entry.tags.push('powerup');
+    }
+    const unique = new Set();
+    entry.tags = entry.tags
+      .map((tag) => tag.trim().toLowerCase())
+      .filter((tag) => tag && !unique.has(tag) && unique.add(tag));
     this.favorites.set(entry.id, entry);
     this.enforceLimit();
     this.save();

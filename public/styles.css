@@ -537,6 +537,71 @@ input:focus {
   color: var(--text-muted);
 }
 
+.highlight-controls {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  align-items: center;
+  padding: 6px 0;
+}
+
+.highlight-controls__search {
+  flex: 1 1 180px;
+}
+
+.highlight-controls__search input {
+  width: 100%;
+  padding: 6px 10px;
+  border-radius: 10px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  background: rgba(255, 255, 255, 0.04);
+  color: var(--text);
+  font-size: 12px;
+  transition: border-color 0.2s ease, background 0.2s ease;
+}
+
+.highlight-controls__search input:focus {
+  outline: none;
+  border-color: rgba(64, 169, 255, 0.5);
+  background: rgba(64, 169, 255, 0.1);
+}
+
+.highlight-controls__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+}
+
+.highlight-tag-filters {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.tag-filter {
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  background: rgba(255, 255, 255, 0.05);
+  color: var(--text-muted);
+  border-radius: 999px;
+  padding: 4px 10px;
+  font-size: 11px;
+  cursor: pointer;
+  transition: background 0.2s ease, border-color 0.2s ease, color 0.2s ease;
+}
+
+.tag-filter.is-active,
+.tag-filter:hover {
+  background: rgba(64, 169, 255, 0.2);
+  border-color: rgba(64, 169, 255, 0.5);
+  color: var(--text);
+}
+
+.highlight-controls__import {
+  display: flex;
+  align-items: center;
+}
+
 .highlight-summary {
   padding: 8px 10px;
   border-radius: 10px;
@@ -602,6 +667,32 @@ input:focus {
 
 .highlight-card__body span.subtitle {
   color: var(--text-muted);
+}
+
+.highlight-card__tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin-top: 4px;
+}
+
+.highlight-card__tags .highlight-tag {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  padding: 2px 6px;
+  border-radius: 999px;
+  font-size: 11px;
+  background: rgba(255, 255, 255, 0.12);
+  color: var(--text);
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  cursor: pointer;
+  transition: background 0.2s ease, border-color 0.2s ease;
+}
+
+.highlight-card__tags .highlight-tag:hover {
+  background: rgba(64, 169, 255, 0.22);
+  border-color: rgba(64, 169, 255, 0.4);
 }
 
 .highlight-card__actions {

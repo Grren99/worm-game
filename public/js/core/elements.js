@@ -40,6 +40,10 @@ export const elements = {
   highlightList: document.getElementById('tournament-highlights'),
   favoriteHighlightList: document.getElementById('favorite-highlights'),
   clearHighlightFavorites: document.getElementById('clear-highlight-favorites'),
+  highlightSearch: document.getElementById('highlight-search'),
+  highlightTagFilters: document.getElementById('highlight-tag-filters'),
+  highlightImportButton: document.getElementById('highlight-import-button'),
+  highlightImportInput: document.getElementById('highlight-import-input'),
   achievementList: document.getElementById('achievement-list'),
   modeIndicator: document.getElementById('mode-indicator'),
   worldInfo: document.getElementById('world-info'),
@@ -52,6 +56,10 @@ export const elements = {
 };
 
 elements.colorButtons = [...(elements.colorPalette?.querySelectorAll('button') || [])];
+
+elements.highlightTagButtons = [
+  ...(elements.highlightTagFilters?.querySelectorAll('button[data-tag]') || [])
+];
 
 elements.canvasContext = elements.canvas?.getContext('2d') || null;
 

@@ -60,7 +60,8 @@ export class NetworkController {
       this.ui.elements.replayButton.disabled = true;
       this.ui.notify(`플레이어 ID가 부여되었습니다 (${playerId.slice(0, 6)})`);
       const favorites = this.state.highlights?.favorites || [];
-      this.state.highlights = { clips: [], summary: null, stats: [], favorites };
+      const filters = this.state.highlights?.filters || { query: '', tags: [] };
+      this.state.highlights = { clips: [], summary: null, stats: [], favorites, filters };
       this.ui.renderHighlights();
       if (this.state.audioEnabled) this.audio.playBgm();
     });
@@ -90,15 +91,17 @@ export class NetworkController {
         this.ui.notify('게임이 종료되었습니다.', 'info');
       }
       const favorites = this.state.highlights?.favorites || [];
+      const filters = this.state.highlights?.filters || { query: '', tags: [] };
       if (highlights) {
         this.state.highlights = {
           clips: Array.isArray(highlights.clips) ? highlights.clips : [],
           summary: highlights.summary || null,
           stats: Array.isArray(highlights.stats) ? highlights.stats : [],
-          favorites
+          favorites,
+          filters
         };
       } else {
-        this.state.highlights = { clips: [], summary: null, stats: [], favorites };
+        this.state.highlights = { clips: [], summary: null, stats: [], favorites, filters };
       }
       this.ui.renderHighlights();
       if (Array.isArray(achievements)) {
@@ -151,7 +154,8 @@ export class NetworkController {
 
     if (prevState && gameState.round !== prevState.round && gameState.phase === 'running') {
       const favorites = this.state.highlights?.favorites || [];
-      this.state.highlights = { clips: [], summary: null, stats: [], favorites };
+      const filters = this.state.highlights?.filters || { query: '', tags: [] };
+      this.state.highlights = { clips: [], summary: null, stats: [], favorites, filters };
       this.ui.renderHighlights();
       this.state.achievements = [];
       this.ui.renderAchievements();
