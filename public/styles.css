@@ -209,6 +209,49 @@ body {
   border: 1px solid rgba(0, 0, 0, 0.25);
 }
 
+.volume-control {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.volume-control input[type='range'] {
+  flex: 1;
+  -webkit-appearance: none;
+  appearance: none;
+  height: 6px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.12);
+  outline: none;
+}
+
+.volume-control input[type='range']::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  background: var(--accent-color);
+  cursor: pointer;
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.35);
+}
+
+.volume-control input[type='range']::-moz-range-thumb {
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  background: var(--accent-color);
+  cursor: pointer;
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.35);
+}
+
+.volume-control__value {
+  min-width: 36px;
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+  color: var(--text-muted);
+}
+
 input,
 button,
 select {

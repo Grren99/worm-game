@@ -58,12 +58,14 @@ export class UIManager {
     this.audio = audio;
     this.highlightLibrary = highlightLibrary || null;
     this.statsInterval = null;
+    this.audioStorageWarning = { load: false, save: false };
   }
 
   init() {
     this.populateModeOptions();
     this.renderColorPalette();
     this.updateModeIndicator();
+    this.restoreAudioSettings();
     this.attachEventListeners();
     this.restoreHighlightFavorites();
     this.renderHighlights();
@@ -162,6 +164,74 @@ export class UIManager {
       const label = badge ? `${badge} ${this.state.preferences.color}` : this.state.preferences.color;
       this.elements.colorPreview.textContent = `선택 색상: ${label}`;
     }
+  }
+
+  clampVolume(value) {
+    if (Number.isNaN(value)) return 0;
+    return Math.max(0, Math.min(1, value));
+  }
+
+  renderAudioSettings() {
+    const volume = this.clampVolume(this.state.audioSettings?.sfxVolume ?? 0.7);
+    if (this.elements.sfxVolume) {
+      this.elements.sfxVolume.value = Math.round(volume * 100);
+    }
+    if (this.elements.sfxVolumeValue) {
+      this.elements.sfxVolumeValue.textContent = `${Math.round(volume * 100)}%`;
+    }
+  }
+
+  persistAudioSettings() {
+    try {
+      const payload = JSON.stringify({ sfxVolume: this.state.audioSettings?.sfxVolume ?? 0.7 });
+      localStorage.setItem('owb.audio-settings', payload);
+    } catch (error) {
+      if (!this.audioStorageWarning.save) {
+        console.warn('오디오 설정 저장 실패:', error);
+        this.audioStorageWarning.save = true;
+      }
+    }
+  }
+
+  restoreAudioSettings() {
+    if (!this.state.audioSettings || typeof this.state.audioSettings !== 'object') {
+      this.state.audioSettings = { sfxVolume: 0.7 };
+    }
+    try {
+      const stored = localStorage.getItem('owb.audio-settings');
+      if (stored) {
+        const parsed = JSON.parse(stored);
+        if (parsed && typeof parsed.sfxVolume === 'number') {
+          this.state.audioSettings.sfxVolume = this.clampVolume(parsed.sfxVolume);
+        }
+      }
+    } catch (error) {
+      if (!this.audioStorageWarning.load) {
+        console.warn('오디오 설정 불러오기 실패:', error);
+        this.audioStorageWarning.load = true;
+      }
+    }
+    if (typeof this.state.audioSettings.sfxVolume !== 'number') {
+      this.state.audioSettings.sfxVolume = 0.7;
+    }
+    if (typeof this.audio?.setSfxVolume === 'function') {
+      this.audio.setSfxVolume(this.state.audioSettings.sfxVolume);
+    }
+    this.renderAudioSettings();
+  }
+
+  updateSfxVolume(value) {
+    const clamped = this.clampVolume(value);
+    if (!this.state.audioSettings || typeof this.state.audioSettings !== 'object') {
+      this.state.audioSettings = { sfxVolume: clamped };
+    } else {
+      this.state.audioSettings.sfxVolume = clamped;
+    }
+    if (typeof this.audio?.setSfxVolume === 'function') {
+      this.audio.setSfxVolume(clamped);
+    }
+    this.renderAudioSettings();
+    this.persistAudioSettings();
   }
 
   applyPreferredColor(color, { attemptChange = false } = {}) {
@@ -534,6 +604,7 @@ export class UIManager {
     const spectator = this.state.spectator;
     if (!spectator?.active) return;
     if (!playerId) return;
+    const previousFocus = spectator.focusId;
     if (lock) spectator.locked = true;
     spectator.focusId = playerId;
     const maxCameras = spectator.maxCameras || 3;
@@ -546,6 +617,9 @@ export class UIManager {
       unique.push(id);
     });
     spectator.cameraIds = unique.slice(0, maxCameras);
+    if (playerId !== previousFocus && typeof this.audio?.playSpectatorFocus === 'function') {
+      this.audio.playSpectatorFocus({ subtle: false });
+    }
     this.renderSpectatorHud();
   }
 
@@ -568,6 +642,9 @@ export class UIManager {
     this.updateSpectatorLockIndicator();
     this.renderSpectatorHud();
     this.notify(`관전자 자동 추적이 ${spectator.locked ? '잠금되었습니다.' : '해제되었습니다.'}`, 'info');
+    if (typeof this.audio?.playSpectatorLock === 'function') {
+      this.audio.playSpectatorLock(spectator.locked);
+    }
   }
 
   updateCountdown() {
@@ -1600,6 +1677,13 @@ export class UIManager {
       this.elements.replayProgress.addEventListener('input', (event) => {
         this.state.replay.index = parseInt(event.target.value, 10) || 0;
         this.state.replay.playing = false;
+      });
+    }
+
+    if (this.elements.sfxVolume) {
+      this.elements.sfxVolume.addEventListener('input', (event) => {
+        const raw = Number(event.target.value);
+        this.updateSfxVolume(raw / 100);
       });
     }
 

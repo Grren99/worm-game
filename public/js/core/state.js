@@ -73,6 +73,9 @@ export const initialState = () => ({
   achievements: [],
   audioEnabled: false,
   audioReady: false,
+  audioSettings: {
+    sfxVolume: 0.7
+  },
   preferences: {
     color: PLAYER_COLOR_KEYS[0],
     mode: GAME_MODES[0].key

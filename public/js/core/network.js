@@ -277,6 +277,7 @@ export class NetworkController {
     const spectator = this.state.spectator;
     if (!spectator) return;
 
+    const previousFocus = spectator.focusId;
     const players = Array.isArray(gameState?.players) ? gameState.players : [];
     const leaderboard = Array.isArray(gameState?.leaderboard) ? gameState.leaderboard : [];
     const alivePlayers = players.filter((player) => player.alive);
@@ -329,6 +330,15 @@ export class NetworkController {
       } else {
         spectator.cameraIds = spectator.focusId ? [spectator.focusId] : [];
       }
+    }
+
+    if (
+      spectator.active &&
+      spectator.focusId &&
+      spectator.focusId !== previousFocus &&
+      typeof this.audio?.playSpectatorFocus === 'function'
+    ) {
+      this.audio.playSpectatorFocus({ subtle: true });
     }
   }
 }

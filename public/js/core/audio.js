@@ -3,15 +3,25 @@ export class AudioManager {
     this.state = appState;
     this.context = null;
     this.master = null;
+    this.sfxGain = null;
+    this.bgmGain = null;
     this.bgm = null;
+    this.bgmLfo = null;
+    this.bgmLfoGain = null;
   }
 
   async setup() {
     if (this.context) return;
     this.context = new (window.AudioContext || window.webkitAudioContext)();
     this.master = this.context.createGain();
-    this.master.gain.value = 0.18;
+    this.master.gain.value = 0.9;
     this.master.connect(this.context.destination);
+    this.sfxGain = this.context.createGain();
+    this.sfxGain.gain.value = this.getStoredSfxVolume();
+    this.sfxGain.connect(this.master);
+    this.bgmGain = this.context.createGain();
+    this.bgmGain.gain.value = 0.08;
+    this.bgmGain.connect(this.master);
     this.state.audioReady = true;
   }
 
@@ -22,6 +32,7 @@ export class AudioManager {
       await this.context.resume();
     }
     this.state.audioEnabled = true;
+    this.setSfxVolume(this.getStoredSfxVolume());
     this.playBgm();
   }
 
@@ -31,14 +42,32 @@ export class AudioManager {
   }
 
   stopBgm() {
-    if (!this.bgm) return;
-    try {
-      this.bgm.stop();
-    } catch (error) {
-      /* no-op */
+    if (this.bgm) {
+      try {
+        this.bgm.stop();
+      } catch (error) {
+        /* no-op */
+      }
+      this.bgm.disconnect();
+      this.bgm = null;
     }
-    this.bgm.disconnect();
-    this.bgm = null;
+    if (this.bgmLfo) {
+      try {
+        this.bgmLfo.stop();
+      } catch (error) {
+        /* no-op */
+      }
+      this.bgmLfo.disconnect();
+      this.bgmLfo = null;
+    }
+    if (this.bgmLfoGain) {
+      try {
+        this.bgmLfoGain.disconnect();
+      } catch (error) {
+        /* no-op */
+      }
+      this.bgmLfoGain = null;
+    }
   }
 
   playBgm() {
@@ -55,10 +84,12 @@ export class AudioManager {
     lfo.connect(lfoGain);
     lfoGain.connect(osc.frequency);
     gain.gain.value = 0.08;
-    osc.connect(gain).connect(this.master);
+    osc.connect(gain).connect(this.bgmGain || this.master);
     osc.start();
     lfo.start();
     this.bgm = osc;
+    this.bgmLfo = lfo;
+    this.bgmLfoGain = lfoGain;
   }
 
   blip({ freq = 440, duration = 0.18, type = 'sine', gainValue = 0.18, delay = 0 } = {}) {
@@ -70,9 +101,34 @@ export class AudioManager {
     osc.frequency.setValueAtTime(freq, startTime);
     gain.gain.setValueAtTime(gainValue, startTime);
     gain.gain.exponentialRampToValueAtTime(0.0001, startTime + duration);
-    osc.connect(gain).connect(this.master);
+    osc.connect(gain).connect(this.sfxGain || this.master);
     osc.start(startTime);
     osc.stop(startTime + duration + 0.05);
+  }
+
+  clampVolume(value) {
+    if (Number.isNaN(value)) return 0;
+    return Math.max(0, Math.min(1, value));
+  }
+
+  getStoredSfxVolume() {
+    const volume = this.state.audioSettings?.sfxVolume;
+    if (typeof volume === 'number') {
+      return this.clampVolume(volume);
+    }
+    return 0.7;
+  }
+
+  setSfxVolume(volume) {
+    const clamped = this.clampVolume(volume);
+    if (!this.state.audioSettings) {
+      this.state.audioSettings = { sfxVolume: clamped };
+    } else {
+      this.state.audioSettings.sfxVolume = clamped;
+    }
+    if (this.sfxGain) {
+      this.sfxGain.gain.value = clamped;
+    }
   }
 
   playNotification(type = 'info') {
@@ -111,5 +167,19 @@ export class AudioManager {
 
   playWin() {
     this.blip({ freq: 880, duration: 0.3, type: 'square', gainValue: 0.22 });
+  }
+
+  playSpectatorFocus({ subtle = false } = {}) {
+    const base = subtle ? 0.16 : 0.2;
+    this.blip({ freq: subtle ? 660 : 720, duration: base, type: 'triangle', gainValue: 0.18 });
+  }
+
+  playSpectatorLock(locked) {
+    if (locked) {
+      this.blip({ freq: 500, duration: 0.18, type: 'square', gainValue: 0.2 });
+      this.blip({ freq: 640, duration: 0.16, type: 'square', gainValue: 0.16, delay: 0.08 });
+    } else {
+      this.blip({ freq: 380, duration: 0.18, type: 'triangle', gainValue: 0.18 });
+    }
   }
 }

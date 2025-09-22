@@ -12,6 +12,8 @@ export const elements = {
   nameInput: document.getElementById('player-name'),
   colorPalette: document.getElementById('color-palette'),
   colorPreview: document.getElementById('color-preview'),
+  sfxVolume: document.getElementById('sfx-volume'),
+  sfxVolumeValue: document.getElementById('sfx-volume-value'),
   quickJoin: document.getElementById('quick-join'),
   createRoom: document.getElementById('create-room'),
   joinRoom: document.getElementById('join-room'),
