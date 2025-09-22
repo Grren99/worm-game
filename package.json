@@ -5,7 +5,8 @@
   "main": "server.js",
   "scripts": {
     "start": "node server.js",
-    "dev": "nodemon server.js"
+    "dev": "nodemon server.js",
+    "loadtest": "node scripts/loadtest.js"
   },
   "keywords": [
     "multiplayer",
@@ -17,10 +18,12 @@
   "license": "MIT",
   "dependencies": {
     "express": "^4.19.2",
+    "mongodb": "^6.20.0",
     "socket.io": "^4.7.5",
     "uuid": "^9.0.1"
   },
   "devDependencies": {
-    "nodemon": "^3.1.6"
+    "nodemon": "^3.1.6",
+    "socket.io-client": "^4.7.5"
   }
 }

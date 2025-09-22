@@ -16,6 +16,17 @@ const ROOM_PHASE_LABEL = {
   ended: '종료'
 };
 
+const ESCAPE_MAP = {
+  '&': '&amp;',
+  '<': '&lt;',
+  '>': '&gt;',
+  '"': '&quot;',
+  "'": '&#39;'
+};
+
+const escapeHtml = (value) =>
+  String(value ?? '').replace(/[&<>"']/g, (char) => ESCAPE_MAP[char] || char);
+
 export class UIManager {
   constructor({ state, elements, socket, audio }) {
     this.state = state;
@@ -31,6 +42,7 @@ export class UIManager {
     this.updateModeIndicator();
     this.attachEventListeners();
     this.renderHighlights();
+    this.renderAchievements();
     this.fetchStats();
     this.statsInterval = setInterval(() => this.fetchStats(), 60000);
     this.notify('온라인 지렁이 배틀에 오신 것을 환영합니다!');
@@ -469,6 +481,40 @@ export class UIManager {
         this.playHighlightClip(Number.isNaN(index) ? -1 : index);
       });
     });
+  }
+
+  renderAchievements() {
+    const list = this.elements.achievementList;
+    if (!list) return;
+    const achievements = Array.isArray(this.state.achievements) ? this.state.achievements : [];
+    if (!achievements.length) {
+      list.innerHTML = '<li class="empty">게임 종료 후 업적을 확인하세요.</li>';
+      return;
+    }
+    list.innerHTML = achievements
+      .map((entry) => {
+        const name = escapeHtml(entry.name ?? '플레이어');
+        const color = entry.color || '#ffffff';
+        const earnedList = Array.isArray(entry.achievements) ? entry.achievements : [];
+        const badges = earnedList
+          .map((achievement) => {
+            const icon = escapeHtml(achievement.icon || '🏅');
+            const title = escapeHtml(achievement.title || '업적');
+            const description = escapeHtml(achievement.description || '');
+            return `<li title="${description}"><span class="badge-icon">${icon}</span><span>${title}</span></li>`;
+          })
+          .join('');
+        return `
+        <li style="border-left-color:${color}">
+          <div class="achievement-list__player">
+            <span class="achievement-list__dot" style="background:${color}"></span>
+            <strong>${name}</strong>
+            <span class="achievement-count">${earnedList.length}개 업적</span>
+          </div>
+          <ul class="achievement-badges">${badges}</ul>
+        </li>`;
+      })
+      .join('');
   }
 
   playHighlightClip(index) {

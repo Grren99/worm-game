@@ -40,6 +40,8 @@ export class NetworkController {
       this.state.world = world;
       this.state.personal.profile = null;
       this.ui.renderPlayerProfile();
+      this.state.achievements = [];
+      this.ui.renderAchievements();
       const previousColor = this.state.preferences.color;
       if (color && PLAYER_COLOR_KEYS.includes(color)) {
         this.ui.applyPreferredColor(color);
@@ -71,7 +73,7 @@ export class NetworkController {
       this.handleGameState(gameState);
     });
 
-    this.socket.on('game:ended', ({ winnerId, leaderboard, tournament, highlights }) => {
+    this.socket.on('game:ended', ({ winnerId, leaderboard, tournament, highlights, achievements }) => {
       this.ui.elements.replayButton.disabled = false;
       const winner = leaderboard?.find((item) => item.id === winnerId);
       if (tournament?.championId) {
@@ -96,6 +98,12 @@ export class NetworkController {
         this.state.highlights = { clips: [], summary: null, stats: [] };
       }
       this.ui.renderHighlights();
+      if (Array.isArray(achievements)) {
+        this.state.achievements = achievements;
+      } else {
+        this.state.achievements = [];
+      }
+      this.ui.renderAchievements();
     });
 
     this.socket.on('chat:message', (message) => {
@@ -141,6 +149,8 @@ export class NetworkController {
     if (prevState && gameState.round !== prevState.round && gameState.phase === 'running') {
       this.state.highlights = { clips: [], summary: null, stats: [] };
       this.ui.renderHighlights();
+      this.state.achievements = [];
+      this.ui.renderAchievements();
     }
 
     if (this.state.playerId) {

@@ -63,6 +63,7 @@ export const initialState = () => ({
     summary: null,
     stats: []
   },
+  achievements: [],
   audioEnabled: false,
   audioReady: false,
   preferences: {

@@ -54,6 +54,39 @@ const POWERUP_SCORES = {
   [POWERUP_TYPES.SHRINK]: 15
 };
 
+const ACHIEVEMENT_DEFINITIONS = {
+  first_blood: {
+    id: 'first_blood',
+    title: '퍼스트 블러드',
+    description: '라운드 첫 번째 킬을 달성했습니다.',
+    icon: '🩸'
+  },
+  survival_champion: {
+    id: 'survival_champion',
+    title: '최후의 생존자',
+    description: '라운드 종반까지 살아남아 승리했습니다.',
+    icon: '👑'
+  },
+  golden_gourmet: {
+    id: 'golden_gourmet',
+    title: '골든 미식가',
+    description: '골든 음식을 2번 이상 섭취했습니다.',
+    icon: '✨'
+  },
+  power_collector: {
+    id: 'power_collector',
+    title: '파워업 수집가',
+    description: '파워업을 3번 이상 획득했습니다.',
+    icon: '🔋'
+  },
+  hunter: {
+    id: 'hunter',
+    title: '헌터',
+    description: '한 라운드에서 3킬 이상을 기록했습니다.',
+    icon: '🎯'
+  }
+};
+
 const GAME_MODES = {
   classic: {
     key: 'classic',
@@ -202,6 +235,7 @@ class StatsStore {
       kills: 0,
       bestScore: 0,
       bestKills: 0,
+      achievements: {},
       lastColor: null,
       lastMode: null,
       createdAt: now,
@@ -209,7 +243,7 @@ class StatsStore {
     };
   }
 
-  recordInMemory({ name, score, survivalTicks, kills, win, color, mode }) {
+  recordInMemory({ name, score, survivalTicks, kills, win, color, mode, achievements }) {
     const snapshot = this.memory.get(name) || this.buildEmptyProfile(name);
     snapshot.games += 1;
     snapshot.totalScore += score;
@@ -221,6 +255,12 @@ class StatsStore {
     if (color) snapshot.lastColor = color;
     if (mode) snapshot.lastMode = mode;
     snapshot.updatedAt = Date.now();
+    if (Array.isArray(achievements) && achievements.length) {
+      snapshot.achievements = snapshot.achievements || {};
+      for (const achievementId of achievements) {
+        snapshot.achievements[achievementId] = (snapshot.achievements[achievementId] || 0) + 1;
+      }
+    }
     this.memory.set(name, snapshot);
   }
 
@@ -229,36 +269,40 @@ class StatsStore {
     const collection = await this.ensureConnection();
     if (!collection) return;
     try {
-      await collection.updateOne(
-        { name: entry.name },
-        {
-          $inc: {
-            games: 1,
-            wins: entry.win ? 1 : 0,
-            totalScore: entry.score,
-            totalSurvivalTicks: entry.survivalTicks,
-            kills: entry.kills
-          },
-          $max: {
-            bestScore: entry.score,
-            bestKills: entry.kills
-          },
-          $set: {
-            updatedAt: new Date(),
-            lastScore: entry.score,
-            lastSurvivalTicks: entry.survivalTicks,
-            lastKills: entry.kills,
-            lastColor: entry.color || null,
-            lastMode: entry.mode || null
-          },
-          $setOnInsert: {
-            createdAt: new Date(),
-            bestScore: entry.score,
-            bestKills: entry.kills
-          }
+      const update = {
+        $inc: {
+          games: 1,
+          wins: entry.win ? 1 : 0,
+          totalScore: entry.score,
+          totalSurvivalTicks: entry.survivalTicks,
+          kills: entry.kills
         },
-        { upsert: true }
-      );
+        $max: {
+          bestScore: entry.score,
+          bestKills: entry.kills
+        },
+        $set: {
+          updatedAt: new Date(),
+          lastScore: entry.score,
+          lastSurvivalTicks: entry.survivalTicks,
+          lastKills: entry.kills,
+          lastColor: entry.color || null,
+          lastMode: entry.mode || null
+        },
+        $setOnInsert: {
+          createdAt: new Date(),
+          bestScore: entry.score,
+          bestKills: entry.kills
+        }
+      };
+      if (Array.isArray(entry.achievements) && entry.achievements.length) {
+        update.$inc = update.$inc || {};
+        for (const achievementId of entry.achievements) {
+          const key = `achievements.${achievementId}`;
+          update.$inc[key] = (update.$inc[key] || 0) + 1;
+        }
+      }
+      await collection.updateOne({ name: entry.name }, update, { upsert: true });
     } catch (error) {
       console.error('MongoDB 통계 저장 실패, 메모리 통계로 대체합니다.', error.message);
     }
@@ -325,6 +369,7 @@ class StatsStore {
             bestKills: 1,
             lastColor: 1,
             lastMode: 1,
+            achievements: 1,
             updatedAt: 1,
             createdAt: 1
           }
@@ -344,6 +389,7 @@ class StatsStore {
         bestKills: doc.bestKills || 0,
         lastColor: doc.lastColor || memoryProfile?.lastColor || null,
         lastMode: doc.lastMode || memoryProfile?.lastMode || null,
+        achievements: doc.achievements || memoryProfile?.achievements || {},
         updatedAt: doc.updatedAt instanceof Date ? doc.updatedAt.getTime() : Date.now(),
         createdAt: doc.createdAt instanceof Date ? doc.createdAt.getTime() : memoryProfile?.createdAt || Date.now()
       };
@@ -369,6 +415,7 @@ class StatsStore {
           bestKills: stats.bestKills || 0,
           lastColor: stats.lastColor || null,
           lastMode: stats.lastMode || null,
+          achievements: stats.achievements || {},
           updatedAt: stats.updatedAt
         }))
       };
@@ -406,6 +453,7 @@ class StatsStore {
           bestKills: doc.bestKills || 0,
           lastColor: doc.lastColor || null,
           lastMode: doc.lastMode || null,
+          achievements: doc.achievements || {},
           updatedAt: doc.updatedAt instanceof Date ? doc.updatedAt.getTime() : Date.now()
         }))
       };
@@ -489,6 +537,7 @@ class RoomState {
     this.pendingHighlights = [];
     this.roundHighlights = [];
     this.roundStats = new Map();
+    this.firstKillAwardedTo = null;
     this.tournament = this.mode.tournament
       ? {
           roundsToWin: this.mode.tournament.roundsToWin,
@@ -664,6 +713,7 @@ class RoomState {
     this.pendingHighlights = [];
     this.roundHighlights = [];
     this.roundStats = new Map();
+    this.firstKillAwardedTo = null;
     for (const player of this.players.values()) {
       player.reset({ baseSpeed: this.settings.baseSpeed });
     }
@@ -914,6 +964,9 @@ class RoomState {
         if (killerStats) {
           killerStats.kills = (killerStats.kills || 0) + 1;
         }
+        if (!this.firstKillAwardedTo) {
+          this.firstKillAwardedTo = killer.id;
+        }
       }
     }
     this.queueHighlight({
@@ -961,16 +1014,19 @@ class RoomState {
         winnerId: winner?.id || null,
         winnerName: winner?.name || null
       });
+      const achievementMap = this.gatherRoundAchievements({ winner });
       for (const player of this.players.values()) {
         const isWinner = winner ? winner.id === player.id : false;
         const isChampion = this.tournament?.championId === player.id;
-        this.recordGlobalStats(player, isChampion || isWinner);
+        const earned = achievementMap.get(player.id) || [];
+        this.recordGlobalStats(player, isChampion || isWinner, earned);
       }
       this.broadcast('game:ended', {
         winnerId: winner?.id || null,
         leaderboard: this.buildLeaderboard(),
         tournament: this.serializeTournament(),
-        highlights: this.buildHighlightPackage({ winner })
+        highlights: this.buildHighlightPackage({ winner }),
+        achievements: this.serializeAchievements(achievementMap)
       });
       if (this.tournament && !this.tournament.championId && this.players.size >= 2) {
         this.phase = 'intermission';
@@ -982,7 +1038,7 @@ class RoomState {
     }
   }
 
-  recordGlobalStats(player, isWinner) {
+  recordGlobalStats(player, isWinner, achievements = []) {
     statsStore
       .record({
         name: player.name,
@@ -991,7 +1047,8 @@ class RoomState {
         kills: player.kills,
         win: Boolean(isWinner),
         color: player.color,
-        mode: this.modeKey
+        mode: this.modeKey,
+        achievements
       })
       .then(() => this.pushProfileUpdate(player))
       .catch((error) => {
@@ -1054,6 +1111,65 @@ class RoomState {
         color: player.color
       }))
       .sort((a, b) => b.score - a.score);
+  }
+
+  gatherRoundAchievements({ winner }) {
+    const achievements = new Map();
+    for (const player of this.players.values()) {
+      const stats = this.roundStats.get(player.id) || {};
+      const earned = [];
+      if (this.firstKillAwardedTo && this.firstKillAwardedTo === player.id && (player.kills || 0) > 0) {
+        earned.push('first_blood');
+      }
+      if (winner && winner.id === player.id) {
+        earned.push('survival_champion');
+      }
+      if ((stats.golden || 0) >= 2) {
+        earned.push('golden_gourmet');
+      }
+      if ((stats.powerups || 0) >= 3) {
+        earned.push('power_collector');
+      }
+      if ((player.kills || 0) >= 3) {
+        earned.push('hunter');
+      }
+      if (earned.length) {
+        achievements.set(player.id, earned);
+      }
+    }
+    return achievements;
+  }
+
+  serializeAchievements(achievementMap) {
+    const results = [];
+    for (const [playerId, ids] of achievementMap.entries()) {
+      const player = this.players.get(playerId);
+      if (!player) continue;
+      const earned = ids
+        .map((id) => ACHIEVEMENT_DEFINITIONS[id])
+        .filter(Boolean)
+        .map((definition) => ({
+          id: definition.id,
+          title: definition.title,
+          description: definition.description,
+          icon: definition.icon
+        }));
+      if (!earned.length) continue;
+      earned.sort((a, b) => a.title.localeCompare(b.title, 'ko'));
+      results.push({
+        playerId,
+        name: player.name,
+        color: player.color,
+        achievements: earned
+      });
+    }
+    results.sort((a, b) => {
+      if (b.achievements.length !== a.achievements.length) {
+        return b.achievements.length - a.achievements.length;
+      }
+      return a.name.localeCompare(b.name, 'ko');
+    });
+    return results;
   }
 
   buildRoundStatsSnapshot() {
@@ -1500,6 +1616,7 @@ app.get('/api/profile/:name', async (req, res) => {
       bestKills: profile.bestKills || 0,
       lastColor: profile.lastColor || null,
       lastMode: profile.lastMode || null,
+      achievements: profile.achievements || {},
       updatedAt: profile.updatedAt || Date.now(),
       createdAt: profile.createdAt || null
     });
