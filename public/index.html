@@ -320,7 +320,18 @@
           <label class="field">
             <span>타임라인</span>
             <div class="replay-timeline" id="replay-timeline">
-              <div class="replay-timeline__markers" id="replay-timeline-markers" aria-hidden="true"></div>
+              <p id="replay-timeline-instructions" class="sr-only">
+                타임라인 마커에 포커스가 있을 때 왼쪽과 오른쪽 화살표로 이전/다음 마커로 이동하고,
+                Home과 End 키로 처음과 끝 마커로 이동할 수 있습니다. 엔터 또는 스페이스 키를 눌러 해당 시점으로 즉시 이동합니다.
+              </p>
+              <div
+                class="replay-timeline__markers"
+                id="replay-timeline-markers"
+                role="group"
+                aria-label="리플레이 주요 이벤트"
+                aria-describedby="replay-timeline-instructions"
+              ></div>
+              <div id="replay-marker-status" class="sr-only" aria-live="polite"></div>
               <input id="replay-progress" type="range" min="0" max="1" step="0.01" value="0" />
             </div>
           </label>

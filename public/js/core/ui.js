@@ -109,6 +109,44 @@ export class UIManager {
       .padStart(2, '0')}`;
   }
 
+  formatReplaySeconds(frameIndex) {
+    const frame = Number(frameIndex);
+    if (!Number.isFinite(frame)) return null;
+    const seconds = frame / TICK_RATE;
+    if (!Number.isFinite(seconds)) return null;
+    const rounded = Math.round(seconds * 10) / 10;
+    return `${rounded.toFixed(1).replace(/\.0$/, '')}초`;
+  }
+
+  getReplayMarkerPrimaryText(marker) {
+    if (!marker) {
+      return '이벤트';
+    }
+    if (marker.title) {
+      return marker.title;
+    }
+    const type = typeof marker.type === 'string' ? marker.type.toLowerCase() : '';
+    if (type === 'powerup') {
+      const powerupKey = marker.powerup;
+      if (powerupKey && POWERUP_LABEL[powerupKey]) {
+        return `파워업: ${POWERUP_LABEL[powerupKey]}`;
+      }
+      return '파워업';
+    }
+    switch (type) {
+      case 'kill':
+        return '킬';
+      case 'golden-food':
+        return '골든 음식';
+      case 'round-end':
+        return '라운드 종료';
+      case 'survival':
+        return '생존 보너스';
+      default:
+        return '이벤트';
+    }
+  }
+
   setStatus(text, error = false) {
     this.elements.status.textContent = text;
     this.elements.status.classList.toggle('status--error', error);
@@ -1789,18 +1827,16 @@ export class UIManager {
     const maxFrame = Math.max(1, frames - 1);
     container.innerHTML = '';
     const map = new Map();
+    const instructionsId = this.elements.replayTimelineInstructions?.id || null;
     if (!markers.length || maxFrame <= 0) {
       this.elements.replayMarkerElements = map;
       this.elements.replayMarkerActiveId = null;
+      if (this.elements.replayMarkerStatus) {
+        this.elements.replayMarkerStatus.textContent = '';
+        delete this.elements.replayMarkerStatus.dataset.markerId;
+      }
       return;
     }
-    const formatSeconds = (frame) => {
-      if (!Number.isFinite(frame)) return null;
-      const seconds = frame / TICK_RATE;
-      if (!Number.isFinite(seconds)) return null;
-      const rounded = Math.round(seconds * 10) / 10;
-      return `${rounded.toFixed(1).replace(/\.0$/, '')}초`;
-    };
     for (const marker of markers) {
       const frameIndex = Number(marker.frameIndex);
       if (!Number.isFinite(frameIndex)) continue;
@@ -1819,14 +1855,18 @@ export class UIManager {
       if (marker.powerup) {
         button.dataset.powerup = marker.powerup;
       }
+      if (instructionsId) {
+        button.setAttribute('aria-describedby', instructionsId);
+      }
       const dot = document.createElement('span');
       dot.className = 'replay-marker__dot';
       if (marker.icon) {
         dot.textContent = marker.icon;
       }
       button.appendChild(dot);
-      const timeLabel = formatSeconds(frameIndex);
-      const parts = [marker.title, marker.subtitle, timeLabel].filter(Boolean);
+      const timeLabel = this.formatReplaySeconds(frameIndex);
+      const primaryText = this.getReplayMarkerPrimaryText(marker);
+      const parts = [primaryText, marker.subtitle, timeLabel].filter(Boolean);
       const label = parts.length ? parts.join(' · ') : '이벤트';
       button.title = label;
       button.setAttribute('aria-label', label);
@@ -1837,19 +1877,61 @@ export class UIManager {
     this.elements.replayMarkerActiveId = null;
   }
 
+  jumpToReplayMarker(markerButton, { fromKeyboard = false } = {}) {
+    if (!markerButton) return;
+    const frameIndex = Number.parseInt(markerButton.dataset.frameIndex, 10);
+    if (!Number.isFinite(frameIndex)) return;
+    this.state.replay.index = frameIndex;
+    this.state.replay.playing = false;
+    if (fromKeyboard) {
+      markerButton.focus();
+    }
+    if (this.elements.replayProgress) {
+      this.elements.replayProgress.value = frameIndex;
+    }
+    this.updateActiveReplayMarker(frameIndex);
+  }
+
   setActiveReplayMarker(markerId) {
     const map = this.elements.replayMarkerElements;
     if (!(map instanceof Map)) return;
     const previousId = this.elements.replayMarkerActiveId;
     if (previousId && map.has(previousId)) {
-      map.get(previousId).classList.remove('is-active');
+      const previousButton = map.get(previousId);
+      previousButton.classList.remove('is-active');
+      previousButton.removeAttribute('aria-current');
     }
+    let markerData = null;
     if (markerId && map.has(markerId)) {
-      map.get(markerId).classList.add('is-active');
+      const nextButton = map.get(markerId);
+      nextButton.classList.add('is-active');
+      nextButton.setAttribute('aria-current', 'true');
       this.elements.replayMarkerActiveId = markerId;
+      const entries = Array.isArray(this.state.replay.markers) ? this.state.replay.markers : [];
+      markerData = entries.find((entry) => entry && entry.id === markerId) || null;
     } else {
       this.elements.replayMarkerActiveId = null;
     }
+    this.announceActiveMarker(markerData);
+  }
+
+  announceActiveMarker(marker) {
+    const liveRegion = this.elements.replayMarkerStatus;
+    if (!liveRegion) return;
+    if (!marker) {
+      liveRegion.textContent = '';
+      delete liveRegion.dataset.markerId;
+      return;
+    }
+    const primaryText = this.getReplayMarkerPrimaryText(marker);
+    const timeLabel = this.formatReplaySeconds(marker.frameIndex);
+    const messageParts = [primaryText, marker.subtitle, timeLabel].filter(Boolean);
+    const announcement = `${messageParts.join(' · ') || '이벤트'} 마커가 선택되었습니다.`;
+    if (liveRegion.dataset.markerId === marker.id && liveRegion.textContent === announcement) {
+      return;
+    }
+    liveRegion.dataset.markerId = marker.id || '';
+    liveRegion.textContent = announcement;
   }
 
   updateActiveReplayMarker(index) {
@@ -2023,18 +2105,35 @@ export class UIManager {
     }
 
     if (this.elements.replayTimelineMarkers) {
-      this.elements.replayTimelineMarkers.addEventListener('click', (event) => {
+      const timelineMarkers = this.elements.replayTimelineMarkers;
+      timelineMarkers.addEventListener('click', (event) => {
         const marker = event.target.closest('button[data-marker-id]');
         if (!marker) return;
         event.preventDefault();
-        const frameIndex = parseInt(marker.dataset.frameIndex, 10);
-        if (!Number.isFinite(frameIndex)) return;
-        this.state.replay.index = frameIndex;
-        this.state.replay.playing = false;
-        if (this.elements.replayProgress) {
-          this.elements.replayProgress.value = frameIndex;
+        this.jumpToReplayMarker(marker, { fromKeyboard: false });
+      });
+      timelineMarkers.addEventListener('keydown', (event) => {
+        const { key } = event;
+        if (!['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(key)) return;
+        const buttons = [...timelineMarkers.querySelectorAll('button[data-marker-id]')];
+        if (!buttons.length) return;
+        event.preventDefault();
+        const activeElement = document.activeElement;
+        const currentIndex = buttons.indexOf(activeElement);
+        let nextIndex;
+        if (key === 'Home') {
+          nextIndex = 0;
+        } else if (key === 'End') {
+          nextIndex = buttons.length - 1;
+        } else if (key === 'ArrowLeft') {
+          nextIndex = currentIndex === -1 ? buttons.length - 1 : Math.max(0, currentIndex - 1);
+        } else {
+          nextIndex = currentIndex === -1 ? 0 : Math.min(buttons.length - 1, currentIndex + 1);
         }
-        this.updateActiveReplayMarker(frameIndex);
+        const target = buttons[nextIndex];
+        if (target) {
+          this.jumpToReplayMarker(target, { fromKeyboard: true });
+        }
       });
     }
 

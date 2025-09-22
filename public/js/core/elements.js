@@ -10,6 +10,8 @@ export const elements = {
   replayProgress: document.getElementById('replay-progress'),
   replayTimeline: document.getElementById('replay-timeline'),
   replayTimelineMarkers: document.getElementById('replay-timeline-markers'),
+  replayTimelineInstructions: document.getElementById('replay-timeline-instructions'),
+  replayMarkerStatus: document.getElementById('replay-marker-status'),
   replayCanvas: document.getElementById('replay-canvas'),
   nameInput: document.getElementById('player-name'),
   colorPalette: document.getElementById('color-palette'),
