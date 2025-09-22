@@ -10,11 +10,9 @@ const STATIC_DIR = path.join(__dirname, 'public');
 const WORLD_WIDTH = 1600;
 const WORLD_HEIGHT = 900;
 const SEGMENT_SIZE = 12;
-const BASE_SPEED = 4;
-const SPEED_BOOST_MULTIPLIER = 1.6;
 const TICK_RATE = 20;
-const COUNTDOWN_SECONDS = 5;
 const MAX_PLAYERS_PER_ROOM = 8;
+const DEFAULT_MODE_KEY = 'classic';
 
 const PLAYER_COLORS = [
   '#ff4d4f',
@@ -55,10 +53,80 @@ const POWERUP_SCORES = {
   [POWERUP_TYPES.SHRINK]: 15
 };
 
-const MAX_FOOD = 30;
-const GOLDEN_FOOD_CHANCE = 0.08;
-const MAX_POWERUPS = 6;
-const POWERUP_SPAWN_CHANCE = 0.05;
+const GAME_MODES = {
+  classic: {
+    key: 'classic',
+    label: '클래식 모드',
+    description: '표준 규격의 밸런스 모드',
+    settings: {
+      baseSpeed: 4,
+      speedBoostMultiplier: 1.6,
+      maxFood: 30,
+      goldenFoodChance: 0.08,
+      maxPowerups: 6,
+      powerupSpawnChance: 0.05,
+      countdownSeconds: 5,
+      intermissionSeconds: 4,
+      survivalBonusPerSecond: 2,
+      winBonus: 200
+    }
+  },
+  battle: {
+    key: 'battle',
+    label: '배틀 모드',
+    description: '음식과 파워업이 풍부한 전투 모드',
+    settings: {
+      baseSpeed: 4,
+      speedBoostMultiplier: 1.5,
+      maxFood: 48,
+      goldenFoodChance: 0.14,
+      maxPowerups: 10,
+      powerupSpawnChance: 0.12,
+      countdownSeconds: 5,
+      intermissionSeconds: 5,
+      survivalBonusPerSecond: 3,
+      winBonus: 220
+    }
+  },
+  speed: {
+    key: 'speed',
+    label: '스피드 모드',
+    description: '더 빠르고 치열한 속도전',
+    settings: {
+      baseSpeed: 5,
+      speedBoostMultiplier: 1.85,
+      maxFood: 26,
+      goldenFoodChance: 0.1,
+      maxPowerups: 5,
+      powerupSpawnChance: 0.04,
+      countdownSeconds: 4,
+      intermissionSeconds: 3,
+      survivalBonusPerSecond: 1,
+      winBonus: 240
+    }
+  },
+  tournament: {
+    key: 'tournament',
+    label: '토너먼트 모드',
+    description: '여러 라운드로 최종 우승자를 결정',
+    settings: {
+      baseSpeed: 4,
+      speedBoostMultiplier: 1.6,
+      maxFood: 32,
+      goldenFoodChance: 0.1,
+      maxPowerups: 8,
+      powerupSpawnChance: 0.08,
+      countdownSeconds: 6,
+      intermissionSeconds: 6,
+      survivalBonusPerSecond: 3,
+      winBonus: 180
+    },
+    tournament: {
+      roundsToWin: 3,
+      intermissionSeconds: 8
+    }
+  }
+};
 
 const app = express();
 const server = http.createServer(app);
@@ -67,6 +135,10 @@ const io = new Server(server, {
     origin: '*'
   }
 });
+
+const resolveMode = (modeKey) => {
+  return GAME_MODES[modeKey] || GAME_MODES[DEFAULT_MODE_KEY];
+};
 
 app.use(express.static(STATIC_DIR));
 
@@ -91,19 +163,22 @@ class PlayerState {
     this.reset();
   }
 
-  reset() {
+  reset({ baseSpeed } = {}) {
+    const effectiveBase = typeof baseSpeed === 'number' ? baseSpeed : this.baseSpeed || 4;
     this.alive = true;
     this.direction = { x: 1, y: 0 };
     this.pendingDirection = { x: 1, y: 0 };
     this.segments = PlayerState.initialBody();
     this.growth = 0;
-    this.speed = BASE_SPEED;
+    this.baseSpeed = effectiveBase;
+    this.speed = effectiveBase;
     this.effects = new Map();
     this.score = 0;
     this.kills = 0;
     this.lastTail = null;
     this.survivalTicks = 0;
     this.spawnTime = Date.now();
+    this.survivalBonus = 0;
   }
 
   static initialBody() {
@@ -113,11 +188,14 @@ class PlayerState {
 }
 
 class RoomState {
-  constructor({ id, name, hostId, isPrivate }) {
+  constructor({ id, name, hostId, isPrivate, modeKey }) {
     this.id = id;
     this.name = name;
     this.hostId = hostId;
     this.isPrivate = Boolean(isPrivate);
+    this.mode = resolveMode(modeKey);
+    this.modeKey = this.mode.key;
+    this.settings = { ...this.mode.settings };
     this.players = new Map();
     this.spectators = new Set();
     this.colorsInUse = new Set();
@@ -125,12 +203,25 @@ class RoomState {
     this.powerups = [];
     this.phase = 'waiting';
     this.countdownTicks = 0;
+    this.intermissionTicks = 0;
     this.frameHistory = [];
     this.round = 0;
     this.loop = null;
+    this.tournament = this.mode.tournament
+      ? {
+          roundsToWin: this.mode.tournament.roundsToWin,
+          intermissionSeconds: this.mode.tournament.intermissionSeconds,
+          wins: new Map(),
+          championId: null
+        }
+      : null;
   }
 
-  assignColor() {
+  assignColor(preferredColor) {
+    if (preferredColor && PLAYER_COLORS.includes(preferredColor) && !this.colorsInUse.has(preferredColor)) {
+      this.colorsInUse.add(preferredColor);
+      return preferredColor;
+    }
     for (const color of PLAYER_COLORS) {
       if (!this.colorsInUse.has(color)) {
         this.colorsInUse.add(color);
@@ -138,6 +229,35 @@ class RoomState {
       }
     }
     return PLAYER_COLORS[Math.floor(Math.random() * PLAYER_COLORS.length)];
+  }
+
+  isColorAvailable(color, ignorePlayerId) {
+    if (!PLAYER_COLORS.includes(color)) return false;
+    if (!this.colorsInUse.has(color)) return true;
+    for (const player of this.players.values()) {
+      if (player.id === ignorePlayerId) continue;
+      if (player.color === color) {
+        return false;
+      }
+    }
+    return true;
+  }
+
+  changePlayerColor(playerId, color) {
+    const player = this.players.get(playerId);
+    if (!player) {
+      return { error: '플레이어를 찾을 수 없습니다.' };
+    }
+    if (this.phase === 'running') {
+      return { error: '게임 중에는 색상을 변경할 수 없습니다.' };
+    }
+    if (!this.isColorAvailable(color, playerId)) {
+      return { error: '해당 색상은 사용할 수 없습니다.' };
+    }
+    this.colorsInUse.delete(player.color);
+    player.color = color;
+    this.colorsInUse.add(color);
+    return { success: true, color };
   }
 
   addPlayer(player) {
@@ -159,6 +279,18 @@ class RoomState {
     }
   }
 
+  beginCountdown() {
+    if (this.players.size < 2) {
+      this.phase = 'waiting';
+      this.countdownTicks = 0;
+      return;
+    }
+    this.phase = 'countdown';
+    const seconds = this.settings.countdownSeconds || 5;
+    this.countdownTicks = Math.max(1, Math.round(seconds * TICK_RATE));
+    this.frameHistory = [];
+  }
+
   stopLoopIfEmpty() {
     if (this.loop && this.players.size === 0 && this.spectators.size === 0) {
       clearInterval(this.loop);
@@ -173,33 +305,58 @@ class RoomState {
   tickPhase() {
     if (this.phase === 'waiting') {
       if (this.players.size >= 2) {
-        this.phase = 'countdown';
-        this.countdownTicks = COUNTDOWN_SECONDS * TICK_RATE;
-        this.frameHistory = [];
+        this.beginCountdown();
       }
     } else if (this.phase === 'countdown') {
+      if (this.players.size < 2) {
+        this.phase = 'waiting';
+        this.countdownTicks = 0;
+        return;
+      }
       this.countdownTicks -= 1;
       if (this.countdownTicks <= 0) {
         this.startMatch();
+      }
+    } else if (this.phase === 'intermission') {
+      if (this.players.size < 2) {
+        this.phase = 'waiting';
+        this.intermissionTicks = 0;
+        return;
+      }
+      if (this.tournament?.championId) {
+        this.phase = 'waiting';
+        return;
+      }
+      this.intermissionTicks -= 1;
+      if (this.intermissionTicks <= 0) {
+        this.beginCountdown();
       }
     }
   }
 
   startMatch() {
+    if (this.players.size < 2) {
+      this.phase = 'waiting';
+      this.food = [];
+      this.powerups = [];
+      return;
+    }
     this.phase = 'running';
     this.round += 1;
     this.frameHistory = [];
     for (const player of this.players.values()) {
-      player.reset();
+      player.reset({ baseSpeed: this.settings.baseSpeed });
     }
-    while (this.food.length < MAX_FOOD) {
+    this.food = [];
+    this.powerups = [];
+    while (this.food.length < this.settings.maxFood) {
       this.spawnFood();
     }
-    this.powerups = [];
+    this.intermissionTicks = 0;
   }
 
   spawnFood() {
-    const type = Math.random() < GOLDEN_FOOD_CHANCE ? FOOD_TYPES.GOLDEN : FOOD_TYPES.BASIC;
+    const type = Math.random() < (this.settings.goldenFoodChance || 0.08) ? FOOD_TYPES.GOLDEN : FOOD_TYPES.BASIC;
     const coord = randomCoord();
     this.food.push({
       id: uuidv4(),
@@ -225,9 +382,9 @@ class RoomState {
     if (!player.alive) return;
     player.direction = player.pendingDirection;
     const head = player.segments[0];
-    const speedMultiplier = player.effects.has(POWERUP_TYPES.SPEED) ? SPEED_BOOST_MULTIPLIER : 1;
-    const dx = player.direction.x * player.speed * speedMultiplier;
-    const dy = player.direction.y * player.speed * speedMultiplier;
+    const boostMultiplier = player.effects.has(POWERUP_TYPES.SPEED) ? this.settings.speedBoostMultiplier : 1;
+    const dx = player.direction.x * player.speed * boostMultiplier;
+    const dy = player.direction.y * player.speed * boostMultiplier;
     const newHead = {
       x: head.x + dx,
       y: head.y + dy
@@ -258,7 +415,7 @@ class RoomState {
         player.score += FOOD_SCORES[meal.type];
         player.growth += meal.type === FOOD_TYPES.GOLDEN ? 6 : 3;
         if (meal.type === FOOD_TYPES.GOLDEN) {
-          player.speed = BASE_SPEED + 1;
+          player.speed = player.baseSpeed + 1;
         }
         this.food.splice(i, 1);
         this.spawnFood();
@@ -274,10 +431,11 @@ class RoomState {
       }
     }
 
-    if (this.food.length < MAX_FOOD && Math.random() < 0.2) {
+    const foodRespawnChance = this.settings.foodRespawnChance ?? 0.2;
+    if (this.food.length < this.settings.maxFood && Math.random() < foodRespawnChance) {
       this.spawnFood();
     }
-    if (this.powerups.length < MAX_POWERUPS && Math.random() < POWERUP_SPAWN_CHANCE) {
+    if (this.powerups.length < this.settings.maxPowerups && Math.random() < (this.settings.powerupSpawnChance || 0.05)) {
       this.spawnPowerup();
     }
   }
@@ -299,7 +457,7 @@ class RoomState {
       const next = ticks - 1;
       if (next <= 0) {
         if (effect === POWERUP_TYPES.SPEED) {
-          player.speed = BASE_SPEED;
+          player.speed = player.baseSpeed;
         }
         player.effects.delete(effect);
       } else {
@@ -331,6 +489,66 @@ class RoomState {
     }
   }
 
+  applySurvivalBonuses() {
+    const bonusPerSecond = this.settings.survivalBonusPerSecond || 0;
+    if (!bonusPerSecond) return;
+    for (const player of this.players.values()) {
+      const seconds = Math.floor(player.survivalTicks / TICK_RATE);
+      if (seconds <= 0) continue;
+      const bonus = seconds * bonusPerSecond;
+      player.score += bonus;
+      player.survivalBonus = bonus;
+    }
+  }
+
+  handleTournamentOutcome(winner) {
+    if (!this.tournament || !winner) return;
+    const wins = this.tournament.wins;
+    const current = (wins.get(winner.id) || 0) + 1;
+    wins.set(winner.id, current);
+    this.tournament.lastWinnerId = winner.id;
+    if (current >= this.tournament.roundsToWin) {
+      this.tournament.championId = winner.id;
+      this.tournament.championAnnouncedAt = Date.now();
+    }
+  }
+
+  serializeTournament() {
+    if (!this.tournament) return { enabled: false };
+    const wins = [...this.tournament.wins.entries()].map(([playerId, winCount]) => {
+      const player = this.players.get(playerId);
+      return {
+        playerId,
+        wins: winCount,
+        name: player?.name || '탈퇴한 플레이어',
+        color: player?.color || PLAYER_COLORS[0]
+      };
+    });
+    for (const player of this.players.values()) {
+      if (!wins.find((entry) => entry.playerId === player.id)) {
+        wins.push({
+          playerId: player.id,
+          wins: 0,
+          name: player.name,
+          color: player.color
+        });
+      }
+    }
+    wins.sort((a, b) => {
+      if (b.wins !== a.wins) return b.wins - a.wins;
+      return a.name.localeCompare(b.name);
+    });
+    return {
+      enabled: true,
+      roundsToWin: this.tournament.roundsToWin,
+      wins,
+      championId: this.tournament.championId,
+      lastWinnerId: this.tournament.lastWinnerId || null,
+      currentRound: this.round,
+      intermissionRemaining: this.phase === 'intermission' ? Math.ceil(this.intermissionTicks / TICK_RATE) : 0
+    };
+  }
+
   killPlayer(player, killerId, cause) {
     if (!player.alive) return;
     player.alive = false;
@@ -357,19 +575,39 @@ class RoomState {
     if (this.phase !== 'running') return;
     const alive = [...this.players.values()].filter((p) => p.alive);
     if (alive.length <= 1) {
-      this.phase = 'ended';
-      if (alive.length === 1) {
-        const winner = alive[0];
-        winner.score += 200;
-        this.recordGlobalStats(winner, true);
+      const winner = alive[0] || null;
+      if (winner) {
+        winner.score += this.settings.winBonus || 0;
+      }
+      this.applySurvivalBonuses();
+      if (this.tournament) {
+        this.handleTournamentOutcome(winner);
+      }
+      if (winner && this.tournament?.championId === winner.id) {
+        this.broadcast('room:notification', {
+          id: uuidv4(),
+          type: 'success',
+          message: `${winner.name}님이 토너먼트 우승을 차지했습니다!`,
+          timestamp: Date.now()
+        });
       }
       for (const player of this.players.values()) {
-        this.recordGlobalStats(player, false);
+        const isWinner = winner ? winner.id === player.id : false;
+        const isChampion = this.tournament?.championId === player.id;
+        this.recordGlobalStats(player, isChampion || isWinner);
       }
       this.broadcast('game:ended', {
-        winnerId: alive[0]?.id || null,
-        leaderboard: this.buildLeaderboard()
+        winnerId: winner?.id || null,
+        leaderboard: this.buildLeaderboard(),
+        tournament: this.serializeTournament()
       });
+      if (this.tournament && !this.tournament.championId && this.players.size >= 2) {
+        this.phase = 'intermission';
+        const waitSeconds = this.tournament.intermissionSeconds || this.settings.intermissionSeconds || 5;
+        this.intermissionTicks = Math.max(1, Math.round(waitSeconds * TICK_RATE));
+      } else {
+        this.phase = 'ended';
+      }
     }
   }
 
@@ -393,8 +631,14 @@ class RoomState {
     return {
       id: this.id,
       name: this.name,
+      mode: {
+        key: this.modeKey,
+        label: this.mode.label,
+        description: this.mode.description
+      },
       phase: this.phase,
       countdown: Math.ceil(this.countdownTicks / TICK_RATE),
+      intermission: this.phase === 'intermission' ? Math.ceil(this.intermissionTicks / TICK_RATE) : 0,
       players: [...this.players.values()].map((player) => ({
         id: player.id,
         name: player.name,
@@ -410,7 +654,8 @@ class RoomState {
       powerups: this.powerups,
       leaderboard: this.buildLeaderboard(),
       round: this.round,
-      timestamp: Date.now()
+      timestamp: Date.now(),
+      tournament: this.serializeTournament()
     };
   }
 
@@ -470,9 +715,9 @@ class RoomState {
   }
 }
 
-const createRoom = ({ name, hostId, isPrivate }) => {
+const createRoom = ({ name, hostId, isPrivate, modeKey }) => {
   const id = uuidv4().slice(0, 6).toUpperCase();
-  const room = new RoomState({ id, name: name || `Room ${id}`, hostId, isPrivate });
+  const room = new RoomState({ id, name: name || `Room ${id}`, hostId, isPrivate, modeKey });
   rooms.set(id, room);
   return room;
 };
@@ -484,7 +729,11 @@ const getJoinableRooms = () => {
       id: room.id,
       name: room.name,
       players: room.players.size,
-      phase: room.phase
+      phase: room.phase,
+      mode: {
+        key: room.modeKey,
+        label: room.mode.label
+      }
     }));
 };
 
@@ -494,33 +743,36 @@ io.on('connection', (socket) => {
     socket.emit('rooms:list', getJoinableRooms());
   });
 
-  socket.on('room:create', ({ name, isPrivate, playerName }, callback) => {
+  socket.on('room:create', ({ name, isPrivate, playerName, mode, preferredColor }, callback) => {
     const safeName = typeof playerName === 'string' && playerName.trim() ? playerName.trim().slice(0, 16) : 'Player';
-    const room = createRoom({ name, hostId: socket.id, isPrivate });
-    const joinResult = joinRoom({ room, socket, playerName: safeName }, callback);
+    const modeKey = typeof mode === 'string' ? mode.toLowerCase() : DEFAULT_MODE_KEY;
+    const room = createRoom({ name, hostId: socket.id, isPrivate, modeKey });
+    const joinResult = joinRoom({ room, socket, playerName: safeName, preferredColor }, callback);
     if (joinResult.error) {
       rooms.delete(room.id);
     }
   });
 
-  socket.on('room:join', ({ roomId, playerName }, callback) => {
+  socket.on('room:join', ({ roomId, playerName, preferredColor }, callback) => {
     const room = rooms.get(String(roomId).toUpperCase());
     const safeName = typeof playerName === 'string' && playerName.trim() ? playerName.trim().slice(0, 16) : 'Player';
     if (!room) {
       callback?.({ error: '방을 찾을 수 없습니다.' });
       return;
     }
-    joinRoom({ room, socket, playerName: safeName }, callback);
+    joinRoom({ room, socket, playerName: safeName, preferredColor }, callback);
   });
 
-  socket.on('room:quick-join', ({ playerName }, callback) => {
+  socket.on('room:quick-join', ({ playerName, preferredColor, mode }, callback) => {
+    const safeName = typeof playerName === 'string' && playerName.trim() ? playerName.trim().slice(0, 16) : 'Player';
     const room = [...rooms.values()].find((candidate) => !candidate.isPrivate && candidate.players.size < MAX_PLAYERS_PER_ROOM);
     if (room) {
-      joinRoom({ room, socket, playerName }, callback);
+      joinRoom({ room, socket, playerName: safeName, preferredColor }, callback);
       return;
     }
-    const created = createRoom({ name: 'Quick Match', hostId: socket.id, isPrivate: false });
-    joinRoom({ room: created, socket, playerName }, callback);
+    const requestedMode = typeof mode === 'string' ? mode.toLowerCase() : DEFAULT_MODE_KEY;
+    const created = createRoom({ name: 'Quick Match', hostId: socket.id, isPrivate: false, modeKey: requestedMode });
+    joinRoom({ room: created, socket, playerName: safeName, preferredColor }, callback);
   });
 
   socket.on('player:input', ({ playerId, direction }) => {
@@ -533,6 +785,27 @@ io.on('connection', (socket) => {
     if (Math.abs(x) === Math.abs(y)) return; // disallow diagonals
     if (x === -player.direction.x && y === -player.direction.y) return;
     player.pendingDirection = { x, y };
+  });
+
+  socket.on('player:color-change', ({ playerId, color }, callback) => {
+    const room = [...rooms.values()].find((r) => r.players.has(playerId));
+    if (!room) {
+      callback?.({ error: '방을 찾을 수 없습니다.' });
+      return;
+    }
+    const result = room.changePlayerColor(playerId, color);
+    if (result.error) {
+      callback?.({ error: result.error });
+      return;
+    }
+    const player = room.players.get(playerId);
+    room.broadcast('room:notification', {
+      id: uuidv4(),
+      type: 'info',
+      message: `${player.name}님이 색상을 변경했습니다.`,
+      timestamp: Date.now()
+    });
+    callback?.({ success: true, color: player.color });
   });
 
   socket.on('chat:message', ({ roomId, playerId, message }) => {
@@ -577,7 +850,7 @@ io.on('connection', (socket) => {
   });
 });
 
-const joinRoom = ({ room, socket, playerName }, callback) => {
+const joinRoom = ({ room, socket, playerName, preferredColor }, callback) => {
   if (room.players.size >= MAX_PLAYERS_PER_ROOM) {
     callback?.({ error: '방이 가득 찼습니다.' });
     return { error: 'full' };
@@ -591,13 +864,18 @@ const joinRoom = ({ room, socket, playerName }, callback) => {
   }
 
   const playerId = uuidv4();
-  const color = room.assignColor();
+  const color = room.assignColor(preferredColor);
   const player = new PlayerState({ id: playerId, name: playerName, color, socketId: socket.id });
   room.addPlayer(player);
   socket.join(room.id);
   socket.emit('player:assigned', {
     playerId,
     roomId: room.id,
+    color,
+    mode: {
+      key: room.modeKey,
+      label: room.mode.label
+    },
     world: { width: WORLD_WIDTH, height: WORLD_HEIGHT, segmentSize: SEGMENT_SIZE }
   });
 
@@ -613,7 +891,12 @@ const joinRoom = ({ room, socket, playerName }, callback) => {
     roomId: room.id,
     playerId,
     name: room.name,
-    phase: room.phase
+    phase: room.phase,
+    color,
+    mode: {
+      key: room.modeKey,
+      label: room.mode.label
+    }
   });
   return { player };
 };

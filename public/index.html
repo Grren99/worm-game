@@ -31,10 +31,29 @@
               <span>닉네임</span>
               <input id="player-name" maxlength="16" placeholder="지렁군" />
             </label>
+            <div class="field">
+              <span>지렁이 색상</span>
+              <div class="color-palette" id="color-palette">
+                <button type="button" data-color="#ff4d4f" aria-label="빨강"></button>
+                <button type="button" data-color="#40a9ff" aria-label="파랑"></button>
+                <button type="button" data-color="#52c41a" aria-label="초록"></button>
+                <button type="button" data-color="#faad14" aria-label="노랑"></button>
+                <button type="button" data-color="#9254de" aria-label="보라"></button>
+                <button type="button" data-color="#fa541c" aria-label="주황"></button>
+                <button type="button" data-color="#eb2f96" aria-label="분홍"></button>
+                <button type="button" data-color="#13c2c2" aria-label="청록"></button>
+              </div>
+              <div class="color-preview" id="color-preview">선택 색상</div>
+            </div>
             <div class="field-row">
               <button id="quick-join" class="btn btn--primary">빠른 입장</button>
               <button id="create-room" class="btn btn--secondary">방 만들기</button>
             </div>
+            <label class="field">
+              <span>게임 모드</span>
+              <select id="game-mode"></select>
+              <small class="field__hint" id="mode-description"></small>
+            </label>
             <label class="field">
               <span>비공개 방</span>
               <input id="private-room-toggle" type="checkbox" />
@@ -108,6 +127,14 @@
                   </tr>
                 </tbody>
               </table>
+            </div>
+            <div class="hud__section hud__section--tournament is-hidden" id="tournament-section">
+              <h3>토너먼트</h3>
+              <div class="tournament__meta">
+                <span id="tournament-rounds">라운드 -</span>
+                <span id="tournament-timer"></span>
+              </div>
+              <ul id="tournament-wins" class="badge-list"></ul>
             </div>
             <div class="hud__section">
               <h3>내 상태</h3>

@@ -11,6 +11,24 @@ const PLAYER_COLORS = {
   '#eb2f96': '🌸',
   '#13c2c2': '💎'
 };
+const PLAYER_COLOR_KEYS = Object.keys(PLAYER_COLORS);
+
+const GAME_MODES = [
+  { key: 'classic', label: '클래식 모드', description: '표준 규격의 밸런스 모드' },
+  { key: 'battle', label: '배틀 모드', description: '파워업과 음식이 풍부한 전투 중심 모드' },
+  { key: 'speed', label: '스피드 모드', description: '빠른 이동 속도로 승부를 보는 모드' },
+  { key: 'tournament', label: '토너먼트 모드', description: '여러 라운드를 거쳐 최종 우승자를 결정하는 모드' }
+];
+
+const MODE_MAP = new Map(GAME_MODES.map((mode) => [mode.key, mode]));
+
+const PHASE_LABEL = {
+  waiting: '대기',
+  countdown: '카운트다운',
+  running: '진행',
+  ended: '종료',
+  intermission: '라운드 대기'
+};
 
 const POWERUP_LABEL = {
   speed: '속도 증가',
@@ -36,11 +54,15 @@ const elements = {
   replayProgress: document.getElementById('replay-progress'),
   replayCanvas: document.getElementById('replay-canvas'),
   nameInput: document.getElementById('player-name'),
+  colorPalette: document.getElementById('color-palette'),
+  colorPreview: document.getElementById('color-preview'),
   quickJoin: document.getElementById('quick-join'),
   createRoom: document.getElementById('create-room'),
   joinRoom: document.getElementById('join-room'),
   refreshRooms: document.getElementById('refresh-rooms'),
   privateToggle: document.getElementById('private-room-toggle'),
+  modeSelect: document.getElementById('game-mode'),
+  modeDescription: document.getElementById('mode-description'),
   roomId: document.getElementById('room-id'),
   roomList: document.getElementById('room-list'),
   statsTableBody: document.querySelector('#stats-table tbody'),
@@ -53,12 +75,18 @@ const elements = {
   aliveList: document.getElementById('alive-list'),
   effectsList: document.getElementById('player-effects'),
   playerStatus: document.getElementById('player-status'),
+  tournamentSection: document.getElementById('tournament-section'),
+  tournamentWins: document.getElementById('tournament-wins'),
+  tournamentRounds: document.getElementById('tournament-rounds'),
+  tournamentTimer: document.getElementById('tournament-timer'),
   modeIndicator: document.getElementById('mode-indicator'),
   worldInfo: document.getElementById('world-info'),
   overlay: document.getElementById('game-overlay'),
   countdown: document.getElementById('countdown'),
   canvas: document.getElementById('game-canvas')
 };
+
+elements.colorButtons = [...(elements.colorPalette?.querySelectorAll('button') || [])];
 
 const ctx = elements.canvas.getContext('2d');
 const replayCtx = elements.replayCanvas.getContext('2d');
@@ -81,6 +109,10 @@ const state = {
   },
   audioEnabled: false,
   audioReady: false,
+  preferences: {
+    color: PLAYER_COLOR_KEYS[0],
+    mode: GAME_MODES[0].key
+  },
   personal: {
     lastScore: 0,
     alive: true
@@ -201,6 +233,72 @@ const notify = (message, type = 'info') => {
   renderNotifications();
 };
 
+const renderColorPalette = () => {
+  if (!elements.colorButtons?.length) return;
+  elements.colorButtons.forEach((button) => {
+    const color = button.dataset.color;
+    if (!color) return;
+    button.style.setProperty('--picker-color', color);
+    const selected = color === state.preferences.color;
+    button.classList.toggle('selected', selected);
+    button.setAttribute('aria-pressed', selected ? 'true' : 'false');
+  });
+  if (elements.colorPreview) {
+    elements.colorPreview.style.setProperty('--preview-color', state.preferences.color);
+    const badge = PLAYER_COLORS[state.preferences.color] || '';
+    const label = badge ? `${badge} ${state.preferences.color}` : state.preferences.color;
+    elements.colorPreview.textContent = `선택 색상: ${label}`;
+  }
+};
+
+const applyPreferredColor = (color, { attemptChange = false } = {}) => {
+  if (!PLAYER_COLOR_KEYS.includes(color)) return;
+  const previous = state.preferences.color;
+  state.preferences.color = color;
+  renderColorPalette();
+  if (attemptChange && state.playerId) {
+    socket.emit('player:color-change', { playerId: state.playerId, color }, (response = {}) => {
+      if (response.error) {
+        notify(response.error, 'warn');
+        state.preferences.color = previous;
+        renderColorPalette();
+        return;
+      }
+      if (response.color) {
+        state.preferences.color = response.color;
+        renderColorPalette();
+      }
+    });
+  }
+};
+
+const populateModeOptions = () => {
+  if (!elements.modeSelect) return;
+  elements.modeSelect.innerHTML = GAME_MODES.map((mode) => `<option value="${mode.key}">${mode.label}</option>`).join('');
+  if (!MODE_MAP.has(state.preferences.mode)) {
+    state.preferences.mode = GAME_MODES[0].key;
+  }
+  elements.modeSelect.value = state.preferences.mode;
+  updateModeDescription();
+};
+
+const updateModeDescription = () => {
+  if (!elements.modeDescription) return;
+  const mode = MODE_MAP.get(state.preferences.mode) || GAME_MODES[0];
+  elements.modeDescription.textContent = mode.description;
+};
+
+const updateModeIndicator = () => {
+  if (!elements.modeIndicator) return;
+  const modeInfo = state.game?.mode;
+  if (!modeInfo) {
+    elements.modeIndicator.textContent = '모드: 로비';
+    return;
+  }
+  const phaseLabel = PHASE_LABEL[state.game?.phase] || '대기';
+  elements.modeIndicator.textContent = `모드: ${modeInfo.label} · ${phaseLabel}`;
+};
+
 const formatTime = (ms) => {
   const date = new Date(ms);
   return `${date.getHours().toString().padStart(2, '0')}:${date
@@ -208,6 +306,29 @@ const formatTime = (ms) => {
     .toString()
     .padStart(2, '0')}`;
 };
+
+populateModeOptions();
+renderColorPalette();
+updateModeIndicator();
+
+elements.colorButtons.forEach((button) => {
+  button.addEventListener('click', () => {
+    if (!button.dataset.color) return;
+    applyPreferredColor(button.dataset.color, { attemptChange: true });
+  });
+});
+
+if (elements.modeSelect) {
+  elements.modeSelect.addEventListener('change', (event) => {
+    const selected = event.target.value;
+    if (MODE_MAP.has(selected)) {
+      state.preferences.mode = selected;
+    } else {
+      state.preferences.mode = GAME_MODES[0].key;
+    }
+    updateModeDescription();
+  });
+}
 
 const renderNotifications = () => {
   elements.notificationList.innerHTML = state.notifications
@@ -233,7 +354,6 @@ const joinRoomCallback = (error, payload) => {
     return;
   }
   setStatus(`${payload.name} 방에 입장했습니다.`);
-  elements.modeIndicator.textContent = `모드: ${payload.phase === 'waiting' ? '대기' : '게임 진행 중'}`;
 };
 
 const requestJoin = (action, data) => {
@@ -259,21 +379,36 @@ const renderRooms = () => {
   elements.roomList.classList.remove('empty');
   elements.roomList.innerHTML = state.rooms
     .map(
-      (room) => `
+      (room) => {
+        const phaseMap = {
+          waiting: '대기중',
+          countdown: '시작 대기',
+          running: '진행중',
+          intermission: '인터미션',
+          ended: '종료'
+        };
+        const phaseText = phaseMap[room.phase] || '진행중';
+        const modeLabel = room.mode?.label || '모드 미정';
+        return `
         <li>
           <div>
             <div><strong>${room.name}</strong></div>
-            <div class="sub">${room.id} · ${room.players}명 · ${room.phase === 'waiting' ? '대기중' : '진행중'}</div>
+            <div class="sub">${room.id} · ${room.players}명 · ${modeLabel} · ${phaseText}</div>
           </div>
           <button class="btn btn--primary" data-room="${room.id}">입장</button>
-        </li>`
+        </li>`;
+      }
     )
     .join('');
 
   elements.roomList.querySelectorAll('button[data-room]').forEach((button) => {
     button.addEventListener('click', async () => {
       const playerName = getPlayerName();
-      await requestJoin('room:join', { roomId: button.dataset.room, playerName });
+      await requestJoin('room:join', {
+        roomId: button.dataset.room,
+        playerName,
+        preferredColor: state.preferences.color
+      });
     });
   });
 };
@@ -371,6 +506,41 @@ const updatePlayerStatus = () => {
     .join('');
 };
 
+const updateTournamentStatus = () => {
+  const container = elements.tournamentSection;
+  if (!container) return;
+  const tournament = state.game?.tournament;
+  if (!tournament?.enabled) {
+    container.classList.add('is-hidden');
+    if (elements.tournamentWins) elements.tournamentWins.innerHTML = '';
+    if (elements.tournamentRounds) elements.tournamentRounds.textContent = '토너먼트 미진행';
+    if (elements.tournamentTimer) elements.tournamentTimer.textContent = '';
+    return;
+  }
+  container.classList.remove('is-hidden');
+  const currentRound = tournament.currentRound || 0;
+  if (elements.tournamentRounds) {
+    elements.tournamentRounds.textContent = `목표 ${tournament.roundsToWin}승 · 현재 라운드 ${currentRound}`;
+  }
+  if (elements.tournamentTimer) {
+    const timerText = tournament.championId
+      ? '토너먼트 종료'
+      : tournament.intermissionRemaining
+      ? `다음 라운드까지 ${tournament.intermissionRemaining}s`
+      : '';
+    elements.tournamentTimer.textContent = timerText;
+  }
+  if (elements.tournamentWins) {
+    const winsMarkup = (tournament.wins || [])
+      .map((entry) => {
+        const championClass = tournament.championId === entry.playerId ? ' class="champion"' : '';
+        return `<li${championClass} style="border-left: 4px solid ${entry.color}"><strong>${entry.name}</strong><span>${entry.wins}승</span></li>`;
+      })
+      .join('');
+    elements.tournamentWins.innerHTML = winsMarkup || '<li class="empty">아직 승자가 없습니다</li>';
+  }
+};
+
 const setOverlay = (text) => {
   if (!text) {
     elements.overlay.classList.add('hidden');
@@ -389,6 +559,9 @@ const updateCountdown = () => {
   if (state.game.phase === 'countdown' && state.game.countdown >= 0) {
     elements.countdown.textContent = `시작까지 ${state.game.countdown}s`;
     elements.countdown.classList.add('active');
+  } else if (state.game.phase === 'intermission' && state.game.intermission > 0) {
+    elements.countdown.textContent = `다음 라운드까지 ${state.game.intermission}s`;
+    elements.countdown.classList.add('active');
   } else {
     elements.countdown.classList.remove('active');
   }
@@ -398,6 +571,8 @@ const updateHud = () => {
   updateScoreboard();
   updateAliveList();
   updatePlayerStatus();
+  updateTournamentStatus();
+  updateModeIndicator();
   updateCountdown();
 };
 
@@ -406,7 +581,6 @@ const handleGamePhase = () => {
     setOverlay('게임에 참가하여 전투를 시작하세요!');
     return;
   }
-  elements.modeIndicator.textContent = `모드: ${state.game.phase}`;
   switch (state.game.phase) {
     case 'waiting':
       setOverlay('플레이어 대기 중... 최소 2명 필요');
@@ -417,6 +591,11 @@ const handleGamePhase = () => {
     case 'running':
       setOverlay(null);
       break;
+    case 'intermission': {
+      const seconds = state.game.intermission || 0;
+      setOverlay(`다음 라운드를 준비 중... ${seconds}s`);
+      break;
+    }
     case 'ended': {
       const winner = state.game.leaderboard?.[0];
       setOverlay(winner ? `${winner.name}님의 승리!` : '무승부!');
@@ -457,7 +636,11 @@ elements.chatForm.addEventListener('submit', handleChatSubmit);
 
 elements.quickJoin.addEventListener('click', async () => {
   const playerName = getPlayerName();
-  await requestJoin('room:quick-join', { playerName });
+  await requestJoin('room:quick-join', {
+    playerName,
+    preferredColor: state.preferences.color,
+    mode: state.preferences.mode
+  });
 });
 
 elements.createRoom.addEventListener('click', async () => {
@@ -465,7 +648,9 @@ elements.createRoom.addEventListener('click', async () => {
   await requestJoin('room:create', {
     name: `${playerName}의 방`,
     isPrivate: elements.privateToggle.checked,
-    playerName
+    playerName,
+    preferredColor: state.preferences.color,
+    mode: state.preferences.mode
   });
 });
 
@@ -476,7 +661,7 @@ elements.joinRoom.addEventListener('click', async () => {
     return;
   }
   const playerName = getPlayerName();
-  await requestJoin('room:join', { roomId, playerName });
+  await requestJoin('room:join', { roomId, playerName, preferredColor: state.preferences.color });
 });
 
 elements.refreshRooms.addEventListener('click', () => {
@@ -493,10 +678,24 @@ socket.on('rooms:updated', (rooms) => {
   renderRooms();
 });
 
-socket.on('player:assigned', ({ playerId, roomId, world }) => {
+socket.on('player:assigned', ({ playerId, roomId, world, color, mode }) => {
   state.playerId = playerId;
   state.roomId = roomId;
   state.world = world;
+  const previousColor = state.preferences.color;
+  if (color && PLAYER_COLOR_KEYS.includes(color)) {
+    applyPreferredColor(color);
+    if (previousColor && previousColor !== color) {
+      notify('선택한 색상이 이미 사용 중이라 다른 색상이 배정되었습니다.', 'warn');
+    }
+  }
+  if (mode?.key && MODE_MAP.has(mode.key)) {
+    state.preferences.mode = mode.key;
+    if (elements.modeSelect) {
+      elements.modeSelect.value = mode.key;
+      updateModeDescription();
+    }
+  }
   elements.worldInfo.textContent = `맵: ${world.width} x ${world.height}`;
   elements.replayButton.disabled = true;
   notify(`플레이어 ID가 부여되었습니다 (${playerId.slice(0, 6)})`);
@@ -523,10 +722,16 @@ socket.on('game:state', (gameState) => {
   }
 });
 
-socket.on('game:ended', ({ winnerId, leaderboard }) => {
+socket.on('game:ended', ({ winnerId, leaderboard, tournament }) => {
   elements.replayButton.disabled = false;
   const winner = leaderboard?.find((item) => item.id === winnerId);
-  if (winner) {
+  if (tournament?.championId) {
+    const champion = leaderboard?.find((entry) => entry.id === tournament.championId);
+    if (champion) {
+      notify(`${champion.name}님이 토너먼트 우승을 차지했습니다!`, 'success');
+      if (champion.id === state.playerId) audio.playWin();
+    }
+  } else if (winner) {
     notify(`${winner.name}님의 승리! 축하합니다!`, 'success');
     if (winnerId === state.playerId) audio.playWin();
   } else {
