@@ -78,6 +78,11 @@ export const initialState = () => ({
     speed: 1,
     lastUpdate: 0
   },
+  network: {
+    latency: null,
+    lastPingAt: null,
+    quality: 'unknown'
+  },
   highlights: {
     clips: [],
     summary: null,

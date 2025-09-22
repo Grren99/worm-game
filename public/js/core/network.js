@@ -31,6 +31,16 @@ export class NetworkController {
     this.ui = ui;
     this.audio = audio;
     this.renderer = renderer;
+    this.latencyInterval = null;
+    this.latencyTimeout = null;
+    this.latencyInFlight = false;
+    if (!this.state.network) {
+      this.state.network = {
+        latency: null,
+        lastPingAt: null,
+        quality: 'unknown'
+      };
+    }
   }
 
   init() {
@@ -158,20 +168,30 @@ export class NetworkController {
 
     this.socket.io.on('open', () => {
       this.ui.setStatus('서버와 연결되었습니다.');
+      this.ui.updateLatency(null, { reason: 'measuring', quality: 'unknown' });
+      this.startLatencyChecks();
     });
 
     this.socket.io.on('close', () => {
       this.ui.setStatus('서버 연결 끊김', true);
       this.ui.elements.replayButton.disabled = true;
+      this.stopLatencyChecks({ reason: 'disconnected' });
     });
 
     this.socket.io.on('reconnect_attempt', () => {
       this.ui.setStatus('서버 재연결 중...');
+      this.stopLatencyChecks({ reason: 'reconnecting' });
     });
 
     this.socket.io.on('reconnect', () => {
       this.ui.setStatus('서버 재연결 완료');
+      this.ui.updateLatency(null, { reason: 'measuring', quality: 'unknown' });
+      this.startLatencyChecks();
     });
+
+    if (this.socket.connected) {
+      this.startLatencyChecks();
+    }
   }
 
   handleGameState(gameState) {

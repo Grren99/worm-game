@@ -16,7 +16,14 @@
     <div class="app">
       <header class="app__header">
         <h1>온라인 지렁이 배틀</h1>
-        <div class="status" id="connection-status">서버 연결 대기중...</div>
+        <div class="status-group">
+          <div class="status" id="connection-status">서버 연결 대기중...</div>
+          <div
+            class="status status--latency"
+            id="latency-indicator"
+            aria-live="polite"
+          >핑 측정 중...</div>
+        </div>
         <div class="header-actions">
           <button id="toggle-audio" class="btn btn--ghost">🔊 사운드 켜기</button>
           <button id="request-replay" class="btn btn--ghost" disabled>🎞 리플레이</button>

@@ -1,109 +1,109 @@
-const express = require('express');
-const http = require('http');
-const path = require('path');
-const { Server } = require('socket.io');
-const { v4: uuidv4 } = require('uuid');
-const { MongoClient } = require('mongodb');
+const express = require("express");
+const http = require("http");
+const path = require("path");
+const { Server } = require("socket.io");
+const { v4: uuidv4 } = require("uuid");
+const { MongoClient } = require("mongodb");
 
 const PORT = process.env.PORT || 3000;
-const STATIC_DIR = path.join(__dirname, 'public');
+const STATIC_DIR = path.join(__dirname, "public");
 
 const WORLD_WIDTH = 1600;
 const WORLD_HEIGHT = 900;
 const SEGMENT_SIZE = 12;
 const TICK_RATE = 20;
 const MAX_PLAYERS_PER_ROOM = 8;
-const DEFAULT_MODE_KEY = 'classic';
+const DEFAULT_MODE_KEY = "classic";
 
 const PLAYER_COLORS = [
-  '#ff4d4f',
-  '#40a9ff',
-  '#52c41a',
-  '#faad14',
-  '#9254de',
-  '#fa541c',
-  '#eb2f96',
-  '#13c2c2'
+  "#ff4d4f",
+  "#40a9ff",
+  "#52c41a",
+  "#faad14",
+  "#9254de",
+  "#fa541c",
+  "#eb2f96",
+  "#13c2c2",
 ];
 
 const POWERUP_TYPES = {
-  SPEED: 'speed',
-  SHIELD: 'shield',
-  SHRINK: 'shrink'
+  SPEED: "speed",
+  SHIELD: "shield",
+  SHRINK: "shrink",
 };
 
 const POWERUP_EFFECT_TICKS = {
   [POWERUP_TYPES.SPEED]: TICK_RATE * 6,
   [POWERUP_TYPES.SHIELD]: TICK_RATE * 5,
-  [POWERUP_TYPES.SHRINK]: TICK_RATE * 1
+  [POWERUP_TYPES.SHRINK]: TICK_RATE * 1,
 };
 
 const POWERUP_LABELS = {
-  [POWERUP_TYPES.SPEED]: '속도 증가',
-  [POWERUP_TYPES.SHIELD]: '무적',
-  [POWERUP_TYPES.SHRINK]: '작아지기'
+  [POWERUP_TYPES.SPEED]: "속도 증가",
+  [POWERUP_TYPES.SHIELD]: "무적",
+  [POWERUP_TYPES.SHRINK]: "작아지기",
 };
 
 const POWERUP_ICONS = {
-  [POWERUP_TYPES.SPEED]: '⚡',
-  [POWERUP_TYPES.SHIELD]: '🛡',
-  [POWERUP_TYPES.SHRINK]: '🌀'
+  [POWERUP_TYPES.SPEED]: "⚡",
+  [POWERUP_TYPES.SHIELD]: "🛡",
+  [POWERUP_TYPES.SHRINK]: "🌀",
 };
 
 const FOOD_TYPES = {
-  BASIC: 'basic',
-  GOLDEN: 'golden'
+  BASIC: "basic",
+  GOLDEN: "golden",
 };
 
 const FOOD_SCORES = {
   [FOOD_TYPES.BASIC]: 10,
-  [FOOD_TYPES.GOLDEN]: 50
+  [FOOD_TYPES.GOLDEN]: 50,
 };
 
 const POWERUP_SCORES = {
   [POWERUP_TYPES.SPEED]: 20,
   [POWERUP_TYPES.SHIELD]: 20,
-  [POWERUP_TYPES.SHRINK]: 15
+  [POWERUP_TYPES.SHRINK]: 15,
 };
 
 const ACHIEVEMENT_DEFINITIONS = {
   first_blood: {
-    id: 'first_blood',
-    title: '퍼스트 블러드',
-    description: '라운드 첫 번째 킬을 달성했습니다.',
-    icon: '🩸'
+    id: "first_blood",
+    title: "퍼스트 블러드",
+    description: "라운드 첫 번째 킬을 달성했습니다.",
+    icon: "🩸",
   },
   survival_champion: {
-    id: 'survival_champion',
-    title: '최후의 생존자',
-    description: '라운드 종반까지 살아남아 승리했습니다.',
-    icon: '👑'
+    id: "survival_champion",
+    title: "최후의 생존자",
+    description: "라운드 종반까지 살아남아 승리했습니다.",
+    icon: "👑",
   },
   golden_gourmet: {
-    id: 'golden_gourmet',
-    title: '골든 미식가',
-    description: '골든 음식을 2번 이상 섭취했습니다.',
-    icon: '✨'
+    id: "golden_gourmet",
+    title: "골든 미식가",
+    description: "골든 음식을 2번 이상 섭취했습니다.",
+    icon: "✨",
   },
   power_collector: {
-    id: 'power_collector',
-    title: '파워업 수집가',
-    description: '파워업을 3번 이상 획득했습니다.',
-    icon: '🔋'
+    id: "power_collector",
+    title: "파워업 수집가",
+    description: "파워업을 3번 이상 획득했습니다.",
+    icon: "🔋",
   },
   hunter: {
-    id: 'hunter',
-    title: '헌터',
-    description: '한 라운드에서 3킬 이상을 기록했습니다.',
-    icon: '🎯'
-  }
+    id: "hunter",
+    title: "헌터",
+    description: "한 라운드에서 3킬 이상을 기록했습니다.",
+    icon: "🎯",
+  },
 };
 
 const GAME_MODES = {
   classic: {
-    key: 'classic',
-    label: '클래식 모드',
-    description: '표준 규격의 밸런스 모드',
+    key: "classic",
+    label: "클래식 모드",
+    description: "표준 규격의 밸런스 모드",
     settings: {
       baseSpeed: 4,
       speedBoostMultiplier: 1.6,
@@ -114,13 +114,13 @@ const GAME_MODES = {
       countdownSeconds: 5,
       intermissionSeconds: 4,
       survivalBonusPerSecond: 2,
-      winBonus: 200
-    }
+      winBonus: 200,
+    },
   },
   battle: {
-    key: 'battle',
-    label: '배틀 모드',
-    description: '음식과 파워업이 풍부한 전투 모드',
+    key: "battle",
+    label: "배틀 모드",
+    description: "음식과 파워업이 풍부한 전투 모드",
     settings: {
       baseSpeed: 4,
       speedBoostMultiplier: 1.5,
@@ -131,13 +131,13 @@ const GAME_MODES = {
       countdownSeconds: 5,
       intermissionSeconds: 5,
       survivalBonusPerSecond: 3,
-      winBonus: 220
-    }
+      winBonus: 220,
+    },
   },
   speed: {
-    key: 'speed',
-    label: '스피드 모드',
-    description: '더 빠르고 치열한 속도전',
+    key: "speed",
+    label: "스피드 모드",
+    description: "더 빠르고 치열한 속도전",
     settings: {
       baseSpeed: 5,
       speedBoostMultiplier: 1.85,
@@ -148,13 +148,13 @@ const GAME_MODES = {
       countdownSeconds: 4,
       intermissionSeconds: 3,
       survivalBonusPerSecond: 1,
-      winBonus: 240
-    }
+      winBonus: 240,
+    },
   },
   tournament: {
-    key: 'tournament',
-    label: '토너먼트 모드',
-    description: '여러 라운드로 최종 우승자를 결정',
+    key: "tournament",
+    label: "토너먼트 모드",
+    description: "여러 라운드로 최종 우승자를 결정",
     settings: {
       baseSpeed: 4,
       speedBoostMultiplier: 1.6,
@@ -165,26 +165,27 @@ const GAME_MODES = {
       countdownSeconds: 6,
       intermissionSeconds: 6,
       survivalBonusPerSecond: 3,
-      winBonus: 180
+      winBonus: 180,
     },
     tournament: {
       roundsToWin: 3,
-      intermissionSeconds: 8
-    }
-  }
+      intermissionSeconds: 8,
+    },
+  },
 };
 
-const MONGODB_URI = process.env.MONGODB_URI || '';
-const MONGODB_DB = process.env.MONGODB_DB || 'online_worm_battle';
-const MONGODB_COLLECTION = process.env.MONGODB_COLLECTION || 'player_stats';
-const MONGODB_EVENT_COLLECTION = process.env.MONGODB_EVENT_COLLECTION || 'event_logs';
+const MONGODB_URI = process.env.MONGODB_URI || "";
+const MONGODB_DB = process.env.MONGODB_DB || "online_worm_battle";
+const MONGODB_COLLECTION = process.env.MONGODB_COLLECTION || "player_stats";
+const MONGODB_EVENT_COLLECTION =
+  process.env.MONGODB_EVENT_COLLECTION || "event_logs";
 
 const app = express();
 const server = http.createServer(app);
 const io = new Server(server, {
   cors: {
-    origin: '*'
-  }
+    origin: "*",
+  },
 });
 
 const resolveMode = (modeKey) => {
@@ -199,11 +200,16 @@ const clamp = (value, min, max) => Math.max(min, Math.min(value, max));
 const DEFAULT_EVENT_LOG_LIMIT = 20;
 const MAX_EVENT_LOG_LIMIT = 100;
 
-const escapeRegex = (value) => String(value).replace(/[-/\\^$*+?.()|[\]{}]/g, '\\$&');
+const escapeRegex = (value) =>
+  String(value).replace(/[-/\\^$*+?.()|[\]{}]/g, "\\$&");
 
 const randomCoord = () => ({
-  x: Math.floor(Math.random() * (WORLD_WIDTH / SEGMENT_SIZE)) * SEGMENT_SIZE + SEGMENT_SIZE / 2,
-  y: Math.floor(Math.random() * (WORLD_HEIGHT / SEGMENT_SIZE)) * SEGMENT_SIZE + SEGMENT_SIZE / 2
+  x:
+    Math.floor(Math.random() * (WORLD_WIDTH / SEGMENT_SIZE)) * SEGMENT_SIZE +
+    SEGMENT_SIZE / 2,
+  y:
+    Math.floor(Math.random() * (WORLD_HEIGHT / SEGMENT_SIZE)) * SEGMENT_SIZE +
+    SEGMENT_SIZE / 2,
 });
 
 const distance = (a, b) => Math.hypot(a.x - b.x, a.y - b.y);
@@ -230,17 +236,22 @@ class StatsStore {
     if (!this.connectPromise) {
       this.connectPromise = MongoClient.connect(this.mongoUri, {
         maxPoolSize: 5,
-        serverSelectionTimeoutMS: 2000
+        serverSelectionTimeoutMS: 2000,
       })
         .then((client) => {
           this.client = client;
           this.db = client.db(this.mongoDbName);
           this.collection = this.db.collection(this.mongoCollectionName);
-          this.eventCollection = this.db.collection(this.mongoEventCollectionName);
+          this.eventCollection = this.db.collection(
+            this.mongoEventCollectionName
+          );
           return this.collection;
         })
         .catch((error) => {
-          console.error('MongoDB 연결 실패, 메모리 통계를 사용합니다.', error.message);
+          console.error(
+            "MongoDB 연결 실패, 메모리 통계를 사용합니다.",
+            error.message
+          );
           this.collection = null;
           this.eventCollection = null;
           this.db = null;
@@ -261,7 +272,10 @@ class StatsStore {
       this.eventCollection = this.db.collection(this.mongoEventCollectionName);
       return this.eventCollection;
     } catch (error) {
-      console.error('MongoDB 이벤트 로그 컬렉션 확보 실패, 메모리 로그를 사용합니다.', error.message);
+      console.error(
+        "MongoDB 이벤트 로그 컬렉션 확보 실패, 메모리 로그를 사용합니다.",
+        error.message
+      );
       this.eventCollection = null;
       return null;
     }
@@ -282,11 +296,20 @@ class StatsStore {
       lastColor: null,
       lastMode: null,
       createdAt: now,
-      updatedAt: now
+      updatedAt: now,
     };
   }
 
-  recordInMemory({ name, score, survivalTicks, kills, win, color, mode, achievements }) {
+  recordInMemory({
+    name,
+    score,
+    survivalTicks,
+    kills,
+    win,
+    color,
+    mode,
+    achievements,
+  }) {
     const snapshot = this.memory.get(name) || this.buildEmptyProfile(name);
     snapshot.games += 1;
     snapshot.totalScore += score;
@@ -301,7 +324,8 @@ class StatsStore {
     if (Array.isArray(achievements) && achievements.length) {
       snapshot.achievements = snapshot.achievements || {};
       for (const achievementId of achievements) {
-        snapshot.achievements[achievementId] = (snapshot.achievements[achievementId] || 0) + 1;
+        snapshot.achievements[achievementId] =
+          (snapshot.achievements[achievementId] || 0) + 1;
       }
     }
     this.memory.set(name, snapshot);
@@ -318,11 +342,11 @@ class StatsStore {
           wins: entry.win ? 1 : 0,
           totalScore: entry.score,
           totalSurvivalTicks: entry.survivalTicks,
-          kills: entry.kills
+          kills: entry.kills,
         },
         $max: {
           bestScore: entry.score,
-          bestKills: entry.kills
+          bestKills: entry.kills,
         },
         $set: {
           updatedAt: new Date(),
@@ -330,13 +354,13 @@ class StatsStore {
           lastSurvivalTicks: entry.survivalTicks,
           lastKills: entry.kills,
           lastColor: entry.color || null,
-          lastMode: entry.mode || null
+          lastMode: entry.mode || null,
         },
         $setOnInsert: {
           createdAt: new Date(),
           bestScore: entry.score,
-          bestKills: entry.kills
-        }
+          bestKills: entry.kills,
+        },
       };
       if (Array.isArray(entry.achievements) && entry.achievements.length) {
         update.$inc = update.$inc || {};
@@ -345,95 +369,137 @@ class StatsStore {
           update.$inc[key] = (update.$inc[key] || 0) + 1;
         }
       }
-      await collection.updateOne({ name: entry.name }, update, { upsert: true });
+      await collection.updateOne({ name: entry.name }, update, {
+        upsert: true,
+      });
     } catch (error) {
-      console.error('MongoDB 통계 저장 실패, 메모리 통계로 대체합니다.', error.message);
+      console.error(
+        "MongoDB 통계 저장 실패, 메모리 통계로 대체합니다.",
+        error.message
+      );
     }
   }
 
   sanitizeEventLogEntry(raw) {
-    if (!raw || typeof raw !== 'object') return null;
-    const timestamp = Number.isFinite(raw.timestamp) ? raw.timestamp : Date.now();
+    if (!raw || typeof raw !== "object") return null;
+    const timestamp = Number.isFinite(raw.timestamp)
+      ? raw.timestamp
+      : Date.now();
     const base = {
-      eventId: typeof raw.eventId === 'string' ? raw.eventId : raw.id || uuidv4(),
-      type: typeof raw.type === 'string' ? raw.type : 'event',
-      roomId: typeof raw.roomId === 'string' ? raw.roomId : null,
-      roomName: typeof raw.roomName === 'string' ? raw.roomName : null,
+      eventId:
+        typeof raw.eventId === "string" ? raw.eventId : raw.id || uuidv4(),
+      type: typeof raw.type === "string" ? raw.type : "event",
+      roomId: typeof raw.roomId === "string" ? raw.roomId : null,
+      roomName: typeof raw.roomName === "string" ? raw.roomName : null,
       round: Number.isFinite(raw.round) ? raw.round : null,
       mode: raw.mode || null,
       timestamp,
       highlight: Boolean(raw.highlight),
-      tags: Array.isArray(raw.tags) ? raw.tags.slice(0, 12).map((tag) => String(tag).slice(0, 32)) : [],
+      tags: Array.isArray(raw.tags)
+        ? raw.tags.slice(0, 12).map((tag) => String(tag).slice(0, 32))
+        : [],
       participants:
-        raw.participants && typeof raw.participants === 'object'
+        raw.participants && typeof raw.participants === "object"
           ? Object.entries(raw.participants).reduce((acc, [key, value]) => {
-              if (!value || typeof value !== 'object') return acc;
+              if (!value || typeof value !== "object") return acc;
               const participant = {
-                id: typeof value.id === 'string' ? value.id : null,
-                name: typeof value.name === 'string' ? value.name : null,
-                color: typeof value.color === 'string' ? value.color : null
+                id: typeof value.id === "string" ? value.id : null,
+                name: typeof value.name === "string" ? value.name : null,
+                color: typeof value.color === "string" ? value.color : null,
               };
               acc[key] = participant;
               return acc;
             }, {})
           : {},
       meta:
-        raw.meta && typeof raw.meta === 'object'
+        raw.meta && typeof raw.meta === "object"
           ? {
-              cause: typeof raw.meta.cause === 'string' ? raw.meta.cause : null,
-              powerup: typeof raw.meta.powerup === 'string' ? raw.meta.powerup : null,
-              score: Number.isFinite(raw.meta.score) ? raw.meta.score : null
+              cause: typeof raw.meta.cause === "string" ? raw.meta.cause : null,
+              powerup:
+                typeof raw.meta.powerup === "string" ? raw.meta.powerup : null,
+              score: Number.isFinite(raw.meta.score) ? raw.meta.score : null,
             }
           : {},
       feed:
-        raw.feed && typeof raw.feed === 'object'
+        raw.feed && typeof raw.feed === "object"
           ? {
-              type: typeof raw.feed.type === 'string' ? raw.feed.type : null,
-              message: typeof raw.feed.message === 'string' ? raw.feed.message : null,
-              detail: typeof raw.feed.detail === 'string' ? raw.feed.detail : null,
-              accent: typeof raw.feed.accent === 'string' ? raw.feed.accent : null,
-              primaryId: typeof raw.feed.primaryId === 'string' ? raw.feed.primaryId : null,
-              secondaryId: typeof raw.feed.secondaryId === 'string' ? raw.feed.secondaryId : null
+              type: typeof raw.feed.type === "string" ? raw.feed.type : null,
+              message:
+                typeof raw.feed.message === "string" ? raw.feed.message : null,
+              detail:
+                typeof raw.feed.detail === "string" ? raw.feed.detail : null,
+              accent:
+                typeof raw.feed.accent === "string" ? raw.feed.accent : null,
+              primaryId:
+                typeof raw.feed.primaryId === "string"
+                  ? raw.feed.primaryId
+                  : null,
+              secondaryId:
+                typeof raw.feed.secondaryId === "string"
+                  ? raw.feed.secondaryId
+                  : null,
             }
           : null,
       context:
-        raw.context && typeof raw.context === 'object'
+        raw.context && typeof raw.context === "object"
           ? {
-              phase: typeof raw.context.phase === 'string' ? raw.context.phase : null,
-              playerCount: Number.isFinite(raw.context.playerCount) ? raw.context.playerCount : null,
-              aliveCount: Number.isFinite(raw.context.aliveCount) ? raw.context.aliveCount : null,
-              spectatorCount: Number.isFinite(raw.context.spectatorCount) ? raw.context.spectatorCount : null,
+              phase:
+                typeof raw.context.phase === "string"
+                  ? raw.context.phase
+                  : null,
+              playerCount: Number.isFinite(raw.context.playerCount)
+                ? raw.context.playerCount
+                : null,
+              aliveCount: Number.isFinite(raw.context.aliveCount)
+                ? raw.context.aliveCount
+                : null,
+              spectatorCount: Number.isFinite(raw.context.spectatorCount)
+                ? raw.context.spectatorCount
+                : null,
               leaderboard: Array.isArray(raw.context.leaderboard)
                 ? raw.context.leaderboard.slice(0, 6).map((row) => ({
-                    id: typeof row.id === 'string' ? row.id : null,
-                    name: typeof row.name === 'string' ? row.name : null,
+                    id: typeof row.id === "string" ? row.id : null,
+                    name: typeof row.name === "string" ? row.name : null,
                     score: Number.isFinite(row.score) ? row.score : null,
                     kills: Number.isFinite(row.kills) ? row.kills : null,
-                    alive: typeof row.alive === 'boolean' ? row.alive : null,
-                    color: typeof row.color === 'string' ? row.color : null
+                    alive: typeof row.alive === "boolean" ? row.alive : null,
+                    color: typeof row.color === "string" ? row.color : null,
                   }))
                 : [],
               tournament:
-                raw.context.tournament && typeof raw.context.tournament === 'object'
+                raw.context.tournament &&
+                typeof raw.context.tournament === "object"
                   ? {
-                      roundsToWin: Number.isFinite(raw.context.tournament.roundsToWin)
+                      roundsToWin: Number.isFinite(
+                        raw.context.tournament.roundsToWin
+                      )
                         ? raw.context.tournament.roundsToWin
                         : null,
                       championId:
-                        typeof raw.context.tournament.championId === 'string'
+                        typeof raw.context.tournament.championId === "string"
                           ? raw.context.tournament.championId
                           : null,
                       wins: Array.isArray(raw.context.tournament.wins)
-                        ? raw.context.tournament.wins.slice(0, 12).map((item) => ({
-                            playerId: typeof item.playerId === 'string' ? item.playerId : null,
-                            winCount: Number.isFinite(item.winCount) ? item.winCount : null
-                          }))
-                        : []
+                        ? raw.context.tournament.wins
+                            .slice(0, 12)
+                            .map((item) => ({
+                              playerId:
+                                typeof item.playerId === "string"
+                                  ? item.playerId
+                                  : null,
+                              winCount: Number.isFinite(item.winCount)
+                                ? item.winCount
+                                : null,
+                            }))
+                        : [],
                     }
-                  : null
+                  : null,
             }
           : {},
-      payload: raw.payload && typeof raw.payload === 'object' ? { ...raw.payload } : null
+      payload:
+        raw.payload && typeof raw.payload === "object"
+          ? { ...raw.payload }
+          : null,
     };
     return base;
   }
@@ -443,51 +509,60 @@ class StatsStore {
     if (!sanitized) return;
     this.memoryEvents.push(sanitized);
     if (this.memoryEvents.length > this.eventBufferLimit) {
-      this.memoryEvents.splice(0, this.memoryEvents.length - this.eventBufferLimit);
+      this.memoryEvents.splice(
+        0,
+        this.memoryEvents.length - this.eventBufferLimit
+      );
     }
     const collection = await this.ensureEventCollection();
     if (!collection) return;
     try {
-      const timestampMs = Number.isFinite(sanitized.timestamp) ? sanitized.timestamp : Date.now();
+      const timestampMs = Number.isFinite(sanitized.timestamp)
+        ? sanitized.timestamp
+        : Date.now();
       const doc = {
         ...sanitized,
         timestamp: new Date(timestampMs),
         timestampMs,
-        createdAt: new Date()
+        createdAt: new Date(),
       };
       await collection.insertOne(doc);
     } catch (error) {
-      console.error('MongoDB 이벤트 로그 저장 실패, 메모리 로그를 유지합니다.', error.message);
+      console.error(
+        "MongoDB 이벤트 로그 저장 실패, 메모리 로그를 유지합니다.",
+        error.message
+      );
     }
   }
 
   normalizeEventLogEntry(raw) {
-    if (!raw || typeof raw !== 'object') return null;
+    if (!raw || typeof raw !== "object") return null;
     const timestampMs = Number.isFinite(raw.timestampMs)
       ? raw.timestampMs
       : raw.timestamp instanceof Date
-        ? raw.timestamp.getTime()
-        : Number.isFinite(raw.timestamp)
-          ? raw.timestamp
-          : Date.now();
+      ? raw.timestamp.getTime()
+      : Number.isFinite(raw.timestamp)
+      ? raw.timestamp
+      : Date.now();
     let mode =
-      raw.mode && typeof raw.mode === 'object'
+      raw.mode && typeof raw.mode === "object"
         ? {
-            key: typeof raw.mode.key === 'string' ? raw.mode.key : null,
-            label: typeof raw.mode.label === 'string' ? raw.mode.label : null
+            key: typeof raw.mode.key === "string" ? raw.mode.key : null,
+            label: typeof raw.mode.label === "string" ? raw.mode.label : null,
           }
         : null;
     if (mode && !mode.key && !mode.label) {
       mode = null;
     }
     const normalizeParticipants = (value) => {
-      if (!value || typeof value !== 'object') return {};
+      if (!value || typeof value !== "object") return {};
       return Object.entries(value).reduce((acc, [key, participant]) => {
-        if (!participant || typeof participant !== 'object') return acc;
+        if (!participant || typeof participant !== "object") return acc;
         acc[key] = {
-          id: typeof participant.id === 'string' ? participant.id : null,
-          name: typeof participant.name === 'string' ? participant.name : null,
-          color: typeof participant.color === 'string' ? participant.color : null
+          id: typeof participant.id === "string" ? participant.id : null,
+          name: typeof participant.name === "string" ? participant.name : null,
+          color:
+            typeof participant.color === "string" ? participant.color : null,
         };
         return acc;
       }, {});
@@ -495,75 +570,115 @@ class StatsStore {
     const normalizeLeaderboard = (rows) => {
       if (!Array.isArray(rows)) return [];
       return rows.slice(0, 6).map((row) => ({
-        id: typeof row.id === 'string' ? row.id : null,
-        name: typeof row.name === 'string' ? row.name : null,
+        id: typeof row.id === "string" ? row.id : null,
+        name: typeof row.name === "string" ? row.name : null,
         score: Number.isFinite(row.score) ? row.score : null,
         kills: Number.isFinite(row.kills) ? row.kills : null,
-        alive: typeof row.alive === 'boolean' ? row.alive : null,
-        color: typeof row.color === 'string' ? row.color : null
+        alive: typeof row.alive === "boolean" ? row.alive : null,
+        color: typeof row.color === "string" ? row.color : null,
       }));
     };
-    const context = raw.context && typeof raw.context === 'object'
-      ? {
-          phase: typeof raw.context.phase === 'string' ? raw.context.phase : null,
-          playerCount: Number.isFinite(raw.context.playerCount) ? raw.context.playerCount : null,
-          aliveCount: Number.isFinite(raw.context.aliveCount) ? raw.context.aliveCount : null,
-          spectatorCount: Number.isFinite(raw.context.spectatorCount) ? raw.context.spectatorCount : null,
-          leaderboard: normalizeLeaderboard(raw.context.leaderboard),
-          tournament:
-            raw.context.tournament && typeof raw.context.tournament === 'object'
-              ? {
-                  roundsToWin: Number.isFinite(raw.context.tournament.roundsToWin)
-                    ? raw.context.tournament.roundsToWin
-                    : null,
-                  championId:
-                    typeof raw.context.tournament.championId === 'string'
-                      ? raw.context.tournament.championId
+    const context =
+      raw.context && typeof raw.context === "object"
+        ? {
+            phase:
+              typeof raw.context.phase === "string" ? raw.context.phase : null,
+            playerCount: Number.isFinite(raw.context.playerCount)
+              ? raw.context.playerCount
+              : null,
+            aliveCount: Number.isFinite(raw.context.aliveCount)
+              ? raw.context.aliveCount
+              : null,
+            spectatorCount: Number.isFinite(raw.context.spectatorCount)
+              ? raw.context.spectatorCount
+              : null,
+            leaderboard: normalizeLeaderboard(raw.context.leaderboard),
+            tournament:
+              raw.context.tournament &&
+              typeof raw.context.tournament === "object"
+                ? {
+                    roundsToWin: Number.isFinite(
+                      raw.context.tournament.roundsToWin
+                    )
+                      ? raw.context.tournament.roundsToWin
                       : null,
-                  wins: Array.isArray(raw.context.tournament.wins)
-                    ? raw.context.tournament.wins.slice(0, 12).map((item) => ({
-                        playerId: typeof item.playerId === 'string' ? item.playerId : null,
-                        winCount: Number.isFinite(item.winCount) ? item.winCount : null
-                      }))
-                    : []
-                }
-              : null
-        }
-      : null;
-    const feed = raw.feed && typeof raw.feed === 'object'
-      ? {
-          type: typeof raw.feed.type === 'string' ? raw.feed.type : null,
-          message: typeof raw.feed.message === 'string' ? raw.feed.message : null,
-          detail: typeof raw.feed.detail === 'string' ? raw.feed.detail : null,
-          accent: typeof raw.feed.accent === 'string' ? raw.feed.accent : null,
-          primaryId: typeof raw.feed.primaryId === 'string' ? raw.feed.primaryId : null,
-          secondaryId: typeof raw.feed.secondaryId === 'string' ? raw.feed.secondaryId : null
-        }
-      : null;
-    const meta = raw.meta && typeof raw.meta === 'object'
-      ? {
-          cause: typeof raw.meta.cause === 'string' ? raw.meta.cause : null,
-          powerup: typeof raw.meta.powerup === 'string' ? raw.meta.powerup : null,
-          score: Number.isFinite(raw.meta.score) ? raw.meta.score : null
-        }
-      : null;
+                    championId:
+                      typeof raw.context.tournament.championId === "string"
+                        ? raw.context.tournament.championId
+                        : null,
+                    wins: Array.isArray(raw.context.tournament.wins)
+                      ? raw.context.tournament.wins
+                          .slice(0, 12)
+                          .map((item) => ({
+                            playerId:
+                              typeof item.playerId === "string"
+                                ? item.playerId
+                                : null,
+                            winCount: Number.isFinite(item.winCount)
+                              ? item.winCount
+                              : null,
+                          }))
+                      : [],
+                  }
+                : null,
+          }
+        : null;
+    const feed =
+      raw.feed && typeof raw.feed === "object"
+        ? {
+            type: typeof raw.feed.type === "string" ? raw.feed.type : null,
+            message:
+              typeof raw.feed.message === "string" ? raw.feed.message : null,
+            detail:
+              typeof raw.feed.detail === "string" ? raw.feed.detail : null,
+            accent:
+              typeof raw.feed.accent === "string" ? raw.feed.accent : null,
+            primaryId:
+              typeof raw.feed.primaryId === "string"
+                ? raw.feed.primaryId
+                : null,
+            secondaryId:
+              typeof raw.feed.secondaryId === "string"
+                ? raw.feed.secondaryId
+                : null,
+          }
+        : null;
+    const meta =
+      raw.meta && typeof raw.meta === "object"
+        ? {
+            cause: typeof raw.meta.cause === "string" ? raw.meta.cause : null,
+            powerup:
+              typeof raw.meta.powerup === "string" ? raw.meta.powerup : null,
+            score: Number.isFinite(raw.meta.score) ? raw.meta.score : null,
+          }
+        : null;
 
     return {
-      eventId: typeof raw.eventId === 'string' ? raw.eventId : typeof raw.id === 'string' ? raw.id : null,
-      type: typeof raw.type === 'string' ? raw.type : 'event',
+      eventId:
+        typeof raw.eventId === "string"
+          ? raw.eventId
+          : typeof raw.id === "string"
+          ? raw.id
+          : null,
+      type: typeof raw.type === "string" ? raw.type : "event",
       timestamp: timestampMs,
       timestampIso: new Date(timestampMs).toISOString(),
       highlight: Boolean(raw.highlight),
-      tags: Array.isArray(raw.tags) ? raw.tags.filter((tag) => typeof tag === 'string').slice(0, 12) : [],
-      roomId: typeof raw.roomId === 'string' ? raw.roomId : null,
-      roomName: typeof raw.roomName === 'string' ? raw.roomName : null,
+      tags: Array.isArray(raw.tags)
+        ? raw.tags.filter((tag) => typeof tag === "string").slice(0, 12)
+        : [],
+      roomId: typeof raw.roomId === "string" ? raw.roomId : null,
+      roomName: typeof raw.roomName === "string" ? raw.roomName : null,
       round: Number.isFinite(raw.round) ? raw.round : null,
       mode,
       participants: normalizeParticipants(raw.participants),
       feed,
       meta,
       context,
-      payload: raw.payload && typeof raw.payload === 'object' ? { ...raw.payload } : null
+      payload:
+        raw.payload && typeof raw.payload === "object"
+          ? { ...raw.payload }
+          : null,
     };
   }
 
@@ -578,14 +693,18 @@ class StatsStore {
       mode,
       playerId,
       playerName,
-      search
+      search,
     } = criteria;
-    const timestamp = Number.isFinite(event.timestamp) ? event.timestamp : Date.now();
+    const timestamp = Number.isFinite(event.timestamp)
+      ? event.timestamp
+      : Date.now();
     if (before && !(timestamp < before)) return false;
-    if (highlight !== undefined && Boolean(event.highlight) !== highlight) return false;
+    if (highlight !== undefined && Boolean(event.highlight) !== highlight)
+      return false;
     if (roomId && event.roomId !== roomId) return false;
     if (mode) {
-      const key = event.mode && typeof event.mode === 'object' ? event.mode.key : null;
+      const key =
+        event.mode && typeof event.mode === "object" ? event.mode.key : null;
       if (key !== mode) return false;
     }
     if (Array.isArray(types) && types.length && !types.includes(event.type)) {
@@ -596,16 +715,19 @@ class StatsStore {
       if (!eventTags.some((tag) => tags.includes(tag))) return false;
     }
     const participants =
-      event.participants && typeof event.participants === 'object'
+      event.participants && typeof event.participants === "object"
         ? Object.values(event.participants).filter(Boolean)
         : [];
     if (playerId) {
-      if (!participants.some((participant) => participant.id === playerId)) return false;
+      if (!participants.some((participant) => participant.id === playerId))
+        return false;
     }
     if (playerName) {
       const lower = playerName.toLowerCase();
-      const participantMatch = participants.some((participant) =>
-        typeof participant.name === 'string' && participant.name.toLowerCase().includes(lower)
+      const participantMatch = participants.some(
+        (participant) =>
+          typeof participant.name === "string" &&
+          participant.name.toLowerCase().includes(lower)
       );
       if (!participantMatch) return false;
     }
@@ -627,9 +749,13 @@ class StatsStore {
   }
 
   async findEventLogs(options = {}) {
-    const limit = clamp(Number.parseInt(options.limit, 10) || DEFAULT_EVENT_LOG_LIMIT, 1, MAX_EVENT_LOG_LIMIT);
+    const limit = clamp(
+      Number.parseInt(options.limit, 10) || DEFAULT_EVENT_LOG_LIMIT,
+      1,
+      MAX_EVENT_LOG_LIMIT
+    );
     const parseCursor = (value) => {
-      if (value === null || value === undefined || value === '') return null;
+      if (value === null || value === undefined || value === "") return null;
       if (Number.isFinite(value)) return Number(value);
       const numeric = Number.parseInt(value, 10);
       if (Number.isFinite(numeric)) return numeric;
@@ -637,16 +763,44 @@ class StatsStore {
       return Number.isFinite(parsed) ? parsed : null;
     };
     const before = parseCursor(options.before);
-    const types = Array.isArray(options.types) ? options.types.filter(Boolean).slice(0, 6) : [];
-    const tags = Array.isArray(options.tags) ? options.tags.filter(Boolean).slice(0, 6) : [];
-    const highlight = typeof options.highlight === 'boolean' ? options.highlight : undefined;
-    const mode = typeof options.mode === 'string' && options.mode ? options.mode : null;
-    const playerId = typeof options.playerId === 'string' && options.playerId ? options.playerId : null;
-    const playerName = typeof options.playerName === 'string' && options.playerName ? options.playerName : null;
-    const search = typeof options.search === 'string' && options.search ? options.search.trim() : null;
-    const roomId = typeof options.roomId === 'string' && options.roomId ? options.roomId : null;
+    const types = Array.isArray(options.types)
+      ? options.types.filter(Boolean).slice(0, 6)
+      : [];
+    const tags = Array.isArray(options.tags)
+      ? options.tags.filter(Boolean).slice(0, 6)
+      : [];
+    const highlight =
+      typeof options.highlight === "boolean" ? options.highlight : undefined;
+    const mode =
+      typeof options.mode === "string" && options.mode ? options.mode : null;
+    const playerId =
+      typeof options.playerId === "string" && options.playerId
+        ? options.playerId
+        : null;
+    const playerName =
+      typeof options.playerName === "string" && options.playerName
+        ? options.playerName
+        : null;
+    const search =
+      typeof options.search === "string" && options.search
+        ? options.search.trim()
+        : null;
+    const roomId =
+      typeof options.roomId === "string" && options.roomId
+        ? options.roomId
+        : null;
 
-    const criteria = { types, tags, roomId, highlight, before, mode, playerId, playerName, search };
+    const criteria = {
+      types,
+      tags,
+      roomId,
+      highlight,
+      before,
+      mode,
+      playerId,
+      playerName,
+      search,
+    };
 
     const collection = await this.ensureEventCollection().catch(() => null);
     if (collection) {
@@ -654,44 +808,49 @@ class StatsStore {
         const filters = [];
         if (highlight !== undefined) filters.push({ highlight });
         if (roomId) filters.push({ roomId });
-        if (mode) filters.push({ 'mode.key': mode });
+        if (mode) filters.push({ "mode.key": mode });
         if (before) filters.push({ timestampMs: { $lt: before } });
         if (types.length) filters.push({ type: { $in: types } });
         if (tags.length) filters.push({ tags: { $in: tags } });
 
         const participantOr = [];
         if (playerId) {
-          participantOr.push({ 'participants.killer.id': playerId });
-          participantOr.push({ 'participants.victim.id': playerId });
-          participantOr.push({ 'participants.player.id': playerId });
-          participantOr.push({ 'participants.winner.id': playerId });
+          participantOr.push({ "participants.killer.id": playerId });
+          participantOr.push({ "participants.victim.id": playerId });
+          participantOr.push({ "participants.player.id": playerId });
+          participantOr.push({ "participants.winner.id": playerId });
         }
         if (playerName) {
-          const regex = new RegExp(escapeRegex(playerName), 'i');
-          participantOr.push({ 'participants.killer.name': regex });
-          participantOr.push({ 'participants.victim.name': regex });
-          participantOr.push({ 'participants.player.name': regex });
-          participantOr.push({ 'participants.winner.name': regex });
+          const regex = new RegExp(escapeRegex(playerName), "i");
+          participantOr.push({ "participants.killer.name": regex });
+          participantOr.push({ "participants.victim.name": regex });
+          participantOr.push({ "participants.player.name": regex });
+          participantOr.push({ "participants.winner.name": regex });
         }
         if (participantOr.length) {
           filters.push({ $or: participantOr });
         }
 
         if (search) {
-          const regex = new RegExp(escapeRegex(search), 'i');
+          const regex = new RegExp(escapeRegex(search), "i");
           filters.push({
             $or: [
-              { 'feed.message': regex },
-              { 'feed.detail': regex },
-              { 'participants.killer.name': regex },
-              { 'participants.victim.name': regex },
-              { 'participants.player.name': regex },
-              { 'participants.winner.name': regex }
-            ]
+              { "feed.message": regex },
+              { "feed.detail": regex },
+              { "participants.killer.name": regex },
+              { "participants.victim.name": regex },
+              { "participants.player.name": regex },
+              { "participants.winner.name": regex },
+            ],
           });
         }
 
-        const mongoQuery = filters.length === 0 ? {} : filters.length === 1 ? filters[0] : { $and: filters };
+        const mongoQuery =
+          filters.length === 0
+            ? {}
+            : filters.length === 1
+            ? filters[0]
+            : { $and: filters };
 
         const docs = await collection
           .find(mongoQuery)
@@ -700,18 +859,26 @@ class StatsStore {
           .toArray();
         const hasMore = docs.length > limit;
         const trimmed = hasMore ? docs.slice(0, limit) : docs;
-        const items = trimmed.map((doc) => this.normalizeEventLogEntry(doc)).filter(Boolean);
-        const nextCursor = hasMore && trimmed.length ? trimmed[trimmed.length - 1].timestampMs : null;
+        const items = trimmed
+          .map((doc) => this.normalizeEventLogEntry(doc))
+          .filter(Boolean);
+        const nextCursor =
+          hasMore && trimmed.length
+            ? trimmed[trimmed.length - 1].timestampMs
+            : null;
         return {
           items,
           hasMore,
           nextCursor,
           nextCursorIso: nextCursor ? new Date(nextCursor).toISOString() : null,
           limit,
-          source: 'mongo'
+          source: "mongo",
         };
       } catch (error) {
-        console.error('이벤트 로그 조회 중 MongoDB 오류 발생, 메모리 로그로 대체합니다.', error.message);
+        console.error(
+          "이벤트 로그 조회 중 MongoDB 오류 발생, 메모리 로그로 대체합니다.",
+          error.message
+        );
       }
     }
 
@@ -720,20 +887,25 @@ class StatsStore {
       const bTs = Number.isFinite(b.timestamp) ? b.timestamp : 0;
       return bTs - aTs;
     });
-    const filtered = sorted.filter((event) => this.memoryEventMatchesCriteria(event, criteria));
+    const filtered = sorted.filter((event) =>
+      this.memoryEventMatchesCriteria(event, criteria)
+    );
     const sliced = filtered.slice(0, limit);
-    const nextCursor = filtered.length > limit && sliced.length
-      ? Number.isFinite(sliced[sliced.length - 1].timestamp)
-        ? sliced[sliced.length - 1].timestamp
-        : null
-      : null;
+    const nextCursor =
+      filtered.length > limit && sliced.length
+        ? Number.isFinite(sliced[sliced.length - 1].timestamp)
+          ? sliced[sliced.length - 1].timestamp
+          : null
+        : null;
     return {
-      items: sliced.map((event) => this.normalizeEventLogEntry(event)).filter(Boolean),
+      items: sliced
+        .map((event) => this.normalizeEventLogEntry(event))
+        .filter(Boolean),
       hasMore: filtered.length > limit,
       nextCursor,
       nextCursorIso: nextCursor ? new Date(nextCursor).toISOString() : null,
       limit,
-      source: 'memory'
+      source: "memory",
     };
   }
 
@@ -750,7 +922,7 @@ class StatsStore {
     if (!collection) return;
     const update = {
       $set: {
-        updatedAt: new Date()
+        updatedAt: new Date(),
       },
       $setOnInsert: {
         createdAt: new Date(),
@@ -760,27 +932,29 @@ class StatsStore {
         totalSurvivalTicks: 0,
         kills: 0,
         bestScore: 0,
-        bestKills: 0
-      }
+        bestKills: 0,
+      },
     };
     if (color) update.$set.lastColor = color;
     if (mode) update.$set.lastMode = mode;
     try {
       await collection.updateOne({ name }, update, { upsert: true });
     } catch (error) {
-      console.error('MongoDB 프로필 업데이트 실패:', error.message);
+      console.error("MongoDB 프로필 업데이트 실패:", error.message);
     }
   }
 
   async getProfile(name) {
-    if (typeof name !== 'string' || !name.trim()) {
-      return this.buildEmptyProfile('unknown');
+    if (typeof name !== "string" || !name.trim()) {
+      return this.buildEmptyProfile("unknown");
     }
     const safeName = name.trim();
     const memoryProfile = this.memory.get(safeName) || null;
     const collection = await this.ensureConnection();
     if (!collection) {
-      return memoryProfile ? { ...memoryProfile } : this.buildEmptyProfile(safeName);
+      return memoryProfile
+        ? { ...memoryProfile }
+        : this.buildEmptyProfile(safeName);
     }
     try {
       const doc = await collection.findOne(
@@ -800,12 +974,14 @@ class StatsStore {
             lastMode: 1,
             achievements: 1,
             updatedAt: 1,
-            createdAt: 1
-          }
+            createdAt: 1,
+          },
         }
       );
       if (!doc) {
-        return memoryProfile ? { ...memoryProfile } : this.buildEmptyProfile(safeName);
+        return memoryProfile
+          ? { ...memoryProfile }
+          : this.buildEmptyProfile(safeName);
       }
       return {
         name: doc.name,
@@ -819,12 +995,21 @@ class StatsStore {
         lastColor: doc.lastColor || memoryProfile?.lastColor || null,
         lastMode: doc.lastMode || memoryProfile?.lastMode || null,
         achievements: doc.achievements || memoryProfile?.achievements || {},
-        updatedAt: doc.updatedAt instanceof Date ? doc.updatedAt.getTime() : Date.now(),
-        createdAt: doc.createdAt instanceof Date ? doc.createdAt.getTime() : memoryProfile?.createdAt || Date.now()
+        updatedAt:
+          doc.updatedAt instanceof Date ? doc.updatedAt.getTime() : Date.now(),
+        createdAt:
+          doc.createdAt instanceof Date
+            ? doc.createdAt.getTime()
+            : memoryProfile?.createdAt || Date.now(),
       };
     } catch (error) {
-      console.error('MongoDB 프로필 조회 실패, 메모리 프로필을 반환합니다.', error.message);
-      return memoryProfile ? { ...memoryProfile } : this.buildEmptyProfile(safeName);
+      console.error(
+        "MongoDB 프로필 조회 실패, 메모리 프로필을 반환합니다.",
+        error.message
+      );
+      return memoryProfile
+        ? { ...memoryProfile }
+        : this.buildEmptyProfile(safeName);
     }
   }
 
@@ -845,28 +1030,32 @@ class StatsStore {
           lastColor: stats.lastColor || null,
           lastMode: stats.lastMode || null,
           achievements: stats.achievements || {},
-          updatedAt: stats.updatedAt
-        }))
+          updatedAt: stats.updatedAt,
+        })),
       };
     }
     try {
       const docs = await collection
-        .find({}, {
-          projection: {
-            _id: 0,
-            name: 1,
-            games: 1,
-            wins: 1,
-            totalScore: 1,
-            totalSurvivalTicks: 1,
-            kills: 1,
-            updatedAt: 1
+        .find(
+          {},
+          {
+            projection: {
+              _id: 0,
+              name: 1,
+              games: 1,
+              wins: 1,
+              totalScore: 1,
+              totalSurvivalTicks: 1,
+              kills: 1,
+              updatedAt: 1,
+            },
           }
-        })
+        )
         .limit(100)
         .toArray();
       const updatedAt = docs.reduce((latest, doc) => {
-        const value = doc.updatedAt instanceof Date ? doc.updatedAt.getTime() : Date.now();
+        const value =
+          doc.updatedAt instanceof Date ? doc.updatedAt.getTime() : Date.now();
         return Math.max(latest, value);
       }, 0);
       return {
@@ -883,11 +1072,17 @@ class StatsStore {
           lastColor: doc.lastColor || null,
           lastMode: doc.lastMode || null,
           achievements: doc.achievements || {},
-          updatedAt: doc.updatedAt instanceof Date ? doc.updatedAt.getTime() : Date.now()
-        }))
+          updatedAt:
+            doc.updatedAt instanceof Date
+              ? doc.updatedAt.getTime()
+              : Date.now(),
+        })),
       };
     } catch (error) {
-      console.error('MongoDB 통계 조회 실패, 메모리 통계로 대체합니다.', error.message);
+      console.error(
+        "MongoDB 통계 조회 실패, 메모리 통계로 대체합니다.",
+        error.message
+      );
       return {
         updatedAt: Date.now(),
         players: [...this.memory.entries()].map(([name, stats]) => ({
@@ -901,8 +1096,8 @@ class StatsStore {
           bestKills: stats.bestKills || 0,
           lastColor: stats.lastColor || null,
           lastMode: stats.lastMode || null,
-          updatedAt: stats.updatedAt
-        }))
+          updatedAt: stats.updatedAt,
+        })),
       };
     }
   }
@@ -920,7 +1115,8 @@ class PlayerState {
   }
 
   reset({ baseSpeed } = {}) {
-    const effectiveBase = typeof baseSpeed === 'number' ? baseSpeed : this.baseSpeed || 4;
+    const effectiveBase =
+      typeof baseSpeed === "number" ? baseSpeed : this.baseSpeed || 4;
     this.alive = true;
     this.direction = { x: 1, y: 0 };
     this.pendingDirection = { x: 1, y: 0 };
@@ -957,7 +1153,7 @@ class RoomState {
     this.colorsInUse = new Set();
     this.food = [];
     this.powerups = [];
-    this.phase = 'waiting';
+    this.phase = "waiting";
     this.countdownTicks = 0;
     this.intermissionTicks = 0;
     this.frameHistory = [];
@@ -974,7 +1170,7 @@ class RoomState {
           intermissionSeconds: this.mode.tournament.intermissionSeconds,
           wins: new Map(),
           championId: null,
-          roundHistory: []
+          roundHistory: [],
         }
       : null;
   }
@@ -991,7 +1187,7 @@ class RoomState {
         deaths: 0,
         golden: 0,
         powerups: 0,
-        food: 0
+        food: 0,
       };
       this.roundStats.set(player.id, entry);
     }
@@ -1005,7 +1201,7 @@ class RoomState {
       id: uuidv4(),
       timestamp: Date.now(),
       round: this.round,
-      ...event
+      ...event,
     };
     this.pendingHighlights.push(entry);
     if (this.pendingHighlights.length > 12) {
@@ -1025,7 +1221,7 @@ class RoomState {
     return {
       id,
       name: player?.name || fallbackName || null,
-      color: player?.color || fallbackColor || null
+      color: player?.color || fallbackColor || null,
     };
   }
 
@@ -1037,10 +1233,30 @@ class RoomState {
         const participant = this.serializeParticipant(id, name, color);
         if (participant) participants[key] = participant;
       };
-      assignParticipant('killer', entry.killerId, entry.killerName, entry.killerColor);
-      assignParticipant('victim', entry.victimId, entry.victimName, entry.victimColor);
-      assignParticipant('player', entry.playerId, entry.playerName, entry.playerColor);
-      assignParticipant('winner', entry.winnerId, entry.winnerName, entry.winnerColor);
+      assignParticipant(
+        "killer",
+        entry.killerId,
+        entry.killerName,
+        entry.killerColor
+      );
+      assignParticipant(
+        "victim",
+        entry.victimId,
+        entry.victimName,
+        entry.victimColor
+      );
+      assignParticipant(
+        "player",
+        entry.playerId,
+        entry.playerName,
+        entry.playerColor
+      );
+      assignParticipant(
+        "winner",
+        entry.winnerId,
+        entry.winnerName,
+        entry.winnerColor
+      );
 
       const leaderboardSnapshot = this.buildLeaderboard()
         .slice(0, 5)
@@ -1050,7 +1266,7 @@ class RoomState {
           score: row.score,
           kills: row.kills,
           alive: row.alive,
-          color: row.color
+          color: row.color,
         }));
 
       const logPayload = {
@@ -1061,7 +1277,7 @@ class RoomState {
         roomName: this.name,
         mode: {
           key: this.modeKey,
-          label: this.mode.label
+          label: this.mode.label,
         },
         round: Number.isFinite(entry.round) ? entry.round : this.round,
         highlight: true,
@@ -1070,7 +1286,7 @@ class RoomState {
         meta: {
           cause: entry.cause || null,
           powerup: entry.powerup || null,
-          score: Number.isFinite(entry.score) ? entry.score : null
+          score: Number.isFinite(entry.score) ? entry.score : null,
         },
         feed: feedEntry
           ? {
@@ -1079,86 +1295,102 @@ class RoomState {
               detail: feedEntry.detail,
               accent: feedEntry.accent,
               primaryId: feedEntry.primaryId || null,
-              secondaryId: feedEntry.secondaryId || null
+              secondaryId: feedEntry.secondaryId || null,
             }
           : null,
         context: {
           phase: this.phase,
           playerCount: this.players.size,
-          aliveCount: [...this.players.values()].filter((player) => player.alive).length,
+          aliveCount: [...this.players.values()].filter(
+            (player) => player.alive
+          ).length,
           spectatorCount: this.spectators.size,
           leaderboard: leaderboardSnapshot,
           tournament: this.tournament
             ? {
                 roundsToWin: this.tournament.roundsToWin,
                 championId: this.tournament.championId || null,
-                wins: [...this.tournament.wins.entries()].map(([playerId, winCount]) => ({
-                  playerId,
-                  winCount
-                }))
+                wins: [...this.tournament.wins.entries()].map(
+                  ([playerId, winCount]) => ({
+                    playerId,
+                    winCount,
+                  })
+                ),
               }
-            : null
-        }
+            : null,
+        },
       };
 
       statsStore.recordEventLog(logPayload);
     } catch (error) {
-      console.error('이벤트 로그 영구 저장 준비에 실패했습니다.', error.message);
+      console.error(
+        "이벤트 로그 영구 저장 준비에 실패했습니다.",
+        error.message
+      );
     }
   }
 
   buildEventFeedEntry(event) {
     if (!event || !event.type) return null;
     switch (event.type) {
-      case 'kill': {
-        const killerId = event.killerId && event.killerId !== event.victimId ? event.killerId : null;
+      case "kill": {
+        const killerId =
+          event.killerId && event.killerId !== event.victimId
+            ? event.killerId
+            : null;
         const killerName = killerId ? event.killerName : null;
-        const victimName = event.victimName || '플레이어';
-        const message = killerName ? `${killerName} ▶ ${victimName}` : `${victimName} 탈락`;
+        const victimName = event.victimName || "플레이어";
+        const message = killerName
+          ? `${killerName} ▶ ${victimName}`
+          : `${victimName} 탈락`;
         const causeLabel = this.describeKillCause(event.cause, killerName);
         const accent = killerName ? event.killerColor : event.victimColor;
         return {
-          type: 'kill',
+          type: "kill",
           message,
           detail: causeLabel,
-          accent: accent || '#ff4d4f',
+          accent: accent || "#ff4d4f",
           primaryId: killerId || event.victimId || null,
-          secondaryId: killerId ? event.victimId || null : null
+          secondaryId: killerId ? event.victimId || null : null,
         };
       }
-      case 'golden-food': {
-        const name = event.playerName || '플레이어';
+      case "golden-food": {
+        const name = event.playerName || "플레이어";
         const message = `${name} 골든 음식!`;
-        const detail = Number.isFinite(event.score) ? `누적 ${event.score}점` : null;
+        const detail = Number.isFinite(event.score)
+          ? `누적 ${event.score}점`
+          : null;
         return {
-          type: 'golden-food',
+          type: "golden-food",
           message,
           detail,
-          accent: event.playerColor || '#f5b301',
-          primaryId: event.playerId || null
+          accent: event.playerColor || "#f5b301",
+          primaryId: event.playerId || null,
         };
       }
-      case 'powerup': {
-        const label = POWERUP_LABELS[event.powerup] || '파워업';
-        const name = event.playerName || '플레이어';
+      case "powerup": {
+        const label = POWERUP_LABELS[event.powerup] || "파워업";
+        const name = event.playerName || "플레이어";
         return {
-          type: 'powerup',
+          type: "powerup",
           message: `${name} ${label} 획득`,
           detail: null,
-          accent: event.playerColor || '#13c2c2',
+          accent: event.playerColor || "#13c2c2",
           primaryId: event.playerId || null,
-          meta: { powerup: event.powerup }
+          meta: { powerup: event.powerup },
         };
       }
-      case 'round-end': {
-        const roundNumber = Number.isFinite(event.round) ? event.round : this.round;
+      case "round-end": {
+        const roundNumber = Number.isFinite(event.round)
+          ? event.round
+          : this.round;
         const winner = event.winnerName || null;
         return {
-          type: 'round-end',
+          type: "round-end",
           message: `라운드 ${roundNumber} 종료`,
-          detail: winner ? `${winner} 승리` : '무승부',
-          accent: event.winnerColor || '#faad14',
-          primaryId: event.winnerId || null
+          detail: winner ? `${winner} 승리` : "무승부",
+          accent: event.winnerColor || "#faad14",
+          primaryId: event.winnerId || null,
         };
       }
       default:
@@ -1168,12 +1400,12 @@ class RoomState {
 
   describeKillCause(cause, hasKiller) {
     switch (cause) {
-      case 'collision':
-        return hasKiller ? '충돌 승리' : '자기 몸에 부딪힘';
-      case 'wall':
-        return '벽에 충돌';
-      case 'self':
-        return '자기 몸에 부딪힘';
+      case "collision":
+        return hasKiller ? "충돌 승리" : "자기 몸에 부딪힘";
+      case "wall":
+        return "벽에 충돌";
+      case "self":
+        return "자기 몸에 부딪힘";
       default:
         return null;
     }
@@ -1183,7 +1415,7 @@ class RoomState {
     const entry = {
       id: uuidv4(),
       timestamp: Date.now(),
-      ...payload
+      ...payload,
     };
     this.eventFeed.push(entry);
     const maxSize = 10;
@@ -1194,7 +1426,11 @@ class RoomState {
   }
 
   assignColor(preferredColor) {
-    if (preferredColor && PLAYER_COLORS.includes(preferredColor) && !this.colorsInUse.has(preferredColor)) {
+    if (
+      preferredColor &&
+      PLAYER_COLORS.includes(preferredColor) &&
+      !this.colorsInUse.has(preferredColor)
+    ) {
       this.colorsInUse.add(preferredColor);
       return preferredColor;
     }
@@ -1222,13 +1458,13 @@ class RoomState {
   changePlayerColor(playerId, color) {
     const player = this.players.get(playerId);
     if (!player) {
-      return { error: '플레이어를 찾을 수 없습니다.' };
+      return { error: "플레이어를 찾을 수 없습니다." };
     }
-    if (this.phase === 'running') {
-      return { error: '게임 중에는 색상을 변경할 수 없습니다.' };
+    if (this.phase === "running") {
+      return { error: "게임 중에는 색상을 변경할 수 없습니다." };
     }
     if (!this.isColorAvailable(color, playerId)) {
-      return { error: '해당 색상은 사용할 수 없습니다.' };
+      return { error: "해당 색상은 사용할 수 없습니다." };
     }
     this.colorsInUse.delete(player.color);
     player.color = color;
@@ -1256,12 +1492,12 @@ class RoomState {
   }
 
   beginCountdown() {
-    if (this.players.size < 2) {
-      this.phase = 'waiting';
+    if (this.players.size < 1) {
+      this.phase = "waiting";
       this.countdownTicks = 0;
       return;
     }
-    this.phase = 'countdown';
+    this.phase = "countdown";
     const seconds = this.settings.countdownSeconds || 5;
     this.countdownTicks = Math.max(1, Math.round(seconds * TICK_RATE));
     this.frameHistory = [];
@@ -1279,13 +1515,13 @@ class RoomState {
   }
 
   tickPhase() {
-    if (this.phase === 'waiting') {
-      if (this.players.size >= 2) {
+    if (this.phase === "waiting") {
+      if (this.players.size >= 1) {
         this.beginCountdown();
       }
-    } else if (this.phase === 'countdown') {
-      if (this.players.size < 2) {
-        this.phase = 'waiting';
+    } else if (this.phase === "countdown") {
+      if (this.players.size < 1) {
+        this.phase = "waiting";
         this.countdownTicks = 0;
         return;
       }
@@ -1293,14 +1529,14 @@ class RoomState {
       if (this.countdownTicks <= 0) {
         this.startMatch();
       }
-    } else if (this.phase === 'intermission') {
-      if (this.players.size < 2) {
-        this.phase = 'waiting';
+    } else if (this.phase === "intermission") {
+      if (this.players.size < 1) {
+        this.phase = "waiting";
         this.intermissionTicks = 0;
         return;
       }
       if (this.tournament?.championId) {
-        this.phase = 'waiting';
+        this.phase = "waiting";
         return;
       }
       this.intermissionTicks -= 1;
@@ -1311,13 +1547,13 @@ class RoomState {
   }
 
   startMatch() {
-    if (this.players.size < 2) {
-      this.phase = 'waiting';
+    if (this.players.size < 1) {
+      this.phase = "waiting";
       this.food = [];
       this.powerups = [];
       return;
     }
-    this.phase = 'running';
+    this.phase = "running";
     this.round += 1;
     this.frameHistory = [];
     this.pendingHighlights = [];
@@ -1337,13 +1573,16 @@ class RoomState {
   }
 
   spawnFood() {
-    const type = Math.random() < (this.settings.goldenFoodChance || 0.08) ? FOOD_TYPES.GOLDEN : FOOD_TYPES.BASIC;
+    const type =
+      Math.random() < (this.settings.goldenFoodChance || 0.08)
+        ? FOOD_TYPES.GOLDEN
+        : FOOD_TYPES.BASIC;
     const coord = randomCoord();
     this.food.push({
       id: uuidv4(),
       type,
       x: coord.x,
-      y: coord.y
+      y: coord.y,
     });
   }
 
@@ -1355,7 +1594,7 @@ class RoomState {
       id: uuidv4(),
       type,
       x: coord.x,
-      y: coord.y
+      y: coord.y,
     });
   }
 
@@ -1363,18 +1602,28 @@ class RoomState {
     if (!player.alive) return;
     player.direction = player.pendingDirection;
     const head = player.segments[0];
-    const boostMultiplier = player.effects.has(POWERUP_TYPES.SPEED) ? this.settings.speedBoostMultiplier : 1;
+    const boostMultiplier = player.effects.has(POWERUP_TYPES.SPEED)
+      ? this.settings.speedBoostMultiplier
+      : 1;
     const dx = player.direction.x * player.speed * boostMultiplier;
     const dy = player.direction.y * player.speed * boostMultiplier;
     const newHead = {
       x: head.x + dx,
-      y: head.y + dy
+      y: head.y + dy,
     };
 
-    const clampedX = clamp(newHead.x, SEGMENT_SIZE / 2, WORLD_WIDTH - SEGMENT_SIZE / 2);
-    const clampedY = clamp(newHead.y, SEGMENT_SIZE / 2, WORLD_HEIGHT - SEGMENT_SIZE / 2);
+    const clampedX = clamp(
+      newHead.x,
+      SEGMENT_SIZE / 2,
+      WORLD_WIDTH - SEGMENT_SIZE / 2
+    );
+    const clampedY = clamp(
+      newHead.y,
+      SEGMENT_SIZE / 2,
+      WORLD_HEIGHT - SEGMENT_SIZE / 2
+    );
     if (clampedX !== newHead.x || clampedY !== newHead.y) {
-      this.killPlayer(player, null, 'wall');
+      this.killPlayer(player, null, "wall");
       return;
     }
 
@@ -1404,11 +1653,11 @@ class RoomState {
             stats.golden = (stats.golden || 0) + 1;
           }
           this.queueHighlight({
-            type: 'golden-food',
+            type: "golden-food",
             playerId: player.id,
             playerName: player.name,
             playerColor: player.color,
-            score: player.score
+            score: player.score,
           });
           player.speed = player.baseSpeed + 1;
         }
@@ -1427,10 +1676,16 @@ class RoomState {
     }
 
     const foodRespawnChance = this.settings.foodRespawnChance ?? 0.2;
-    if (this.food.length < this.settings.maxFood && Math.random() < foodRespawnChance) {
+    if (
+      this.food.length < this.settings.maxFood &&
+      Math.random() < foodRespawnChance
+    ) {
       this.spawnFood();
     }
-    if (this.powerups.length < this.settings.maxPowerups && Math.random() < (this.settings.powerupSpawnChance || 0.05)) {
+    if (
+      this.powerups.length < this.settings.maxPowerups &&
+      Math.random() < (this.settings.powerupSpawnChance || 0.05)
+    ) {
       this.spawnPowerup();
     }
   }
@@ -1441,12 +1696,12 @@ class RoomState {
       stats.powerups = (stats.powerups || 0) + 1;
     }
     this.queueHighlight({
-      type: 'powerup',
+      type: "powerup",
       powerup: type,
       playerId: player.id,
       playerName: player.name,
       playerColor: player.color,
-      score: player.score
+      score: player.score,
     });
     if (type === POWERUP_TYPES.SHRINK) {
       const removeCount = Math.floor(player.segments.length * 0.25);
@@ -1462,12 +1717,15 @@ class RoomState {
 
   handleEffectTimers(player) {
     for (const [effect, data] of [...player.effects.entries()]) {
-      const remaining = typeof data === 'object' && data !== null ? data.remaining : data;
+      const remaining =
+        typeof data === "object" && data !== null ? data.remaining : data;
       const total =
-        typeof data === 'object' && data !== null && typeof data.total === 'number'
+        typeof data === "object" &&
+        data !== null &&
+        typeof data.total === "number"
           ? data.total
           : POWERUP_EFFECT_TICKS[effect] || TICK_RATE * 4;
-      const next = (typeof remaining === 'number' ? remaining : 0) - 1;
+      const next = (typeof remaining === "number" ? remaining : 0) - 1;
       if (next <= 0) {
         if (effect === POWERUP_TYPES.SPEED) {
           player.speed = player.baseSpeed;
@@ -1493,7 +1751,7 @@ class RoomState {
               player.effects.delete(POWERUP_TYPES.SHIELD);
               continue;
             }
-            this.killPlayer(player, other.id, 'collision');
+            this.killPlayer(player, other.id, "collision");
             break;
           }
         }
@@ -1545,7 +1803,7 @@ class RoomState {
             subtitle: event.subtitle,
             icon: event.icon,
             accent: event.accent,
-            timestamp: event.timestamp || now
+            timestamp: event.timestamp || now,
           }))
         : [],
       topStats: Array.isArray(highlightPackage.stats)
@@ -1560,9 +1818,9 @@ class RoomState {
               kills: stat.kills,
               golden: stat.golden,
               powerups: stat.powerups,
-              survivalSeconds: stat.survivalSeconds
+              survivalSeconds: stat.survivalSeconds,
             }))
-        : []
+        : [],
     };
     this.tournament.roundHistory = this.tournament.roundHistory || [];
     this.tournament.roundHistory.push(summaryEntry);
@@ -1577,22 +1835,24 @@ class RoomState {
 
   serializeTournament() {
     if (!this.tournament) return { enabled: false };
-    const wins = [...this.tournament.wins.entries()].map(([playerId, winCount]) => {
-      const player = this.players.get(playerId);
-      return {
-        playerId,
-        wins: winCount,
-        name: player?.name || '탈퇴한 플레이어',
-        color: player?.color || PLAYER_COLORS[0]
-      };
-    });
+    const wins = [...this.tournament.wins.entries()].map(
+      ([playerId, winCount]) => {
+        const player = this.players.get(playerId);
+        return {
+          playerId,
+          wins: winCount,
+          name: player?.name || "탈퇴한 플레이어",
+          color: player?.color || PLAYER_COLORS[0],
+        };
+      }
+    );
     for (const player of this.players.values()) {
       if (!wins.find((entry) => entry.playerId === player.id)) {
         wins.push({
           playerId: player.id,
           wins: 0,
           name: player.name,
-          color: player.color
+          color: player.color,
         });
       }
     }
@@ -1622,7 +1882,7 @@ class RoomState {
                     name: entry.summary.topKiller.name,
                     color: entry.summary.topKiller.color,
                     kills: entry.summary.topKiller.kills,
-                    score: entry.summary.topKiller.score
+                    score: entry.summary.topKiller.score,
                   }
                 : null,
               goldenCollector: entry.summary.goldenCollector
@@ -1631,7 +1891,7 @@ class RoomState {
                     name: entry.summary.goldenCollector.name,
                     color: entry.summary.goldenCollector.color,
                     golden: entry.summary.goldenCollector.golden,
-                    score: entry.summary.goldenCollector.score
+                    score: entry.summary.goldenCollector.score,
                   }
                 : null,
               survivor: entry.summary.survivor
@@ -1640,9 +1900,9 @@ class RoomState {
                     name: entry.summary.survivor.name,
                     color: entry.summary.survivor.color,
                     survivalSeconds: entry.summary.survivor.survivalSeconds,
-                    score: entry.summary.survivor.score
+                    score: entry.summary.survivor.score,
                   }
-                : null
+                : null,
             }
           : null,
         keyEvents: Array.isArray(entry.keyEvents)
@@ -1653,7 +1913,7 @@ class RoomState {
               subtitle: event.subtitle,
               icon: event.icon,
               accent: event.accent,
-              timestamp: event.timestamp
+              timestamp: event.timestamp,
             }))
           : [],
         topStats: Array.isArray(entry.topStats)
@@ -1665,14 +1925,17 @@ class RoomState {
               kills: stat.kills,
               golden: stat.golden,
               powerups: stat.powerups,
-              survivalSeconds: stat.survivalSeconds
+              survivalSeconds: stat.survivalSeconds,
             }))
-          : []
+          : [],
       })),
       championId: this.tournament.championId,
       lastWinnerId: this.tournament.lastWinnerId || null,
       currentRound: this.round,
-      intermissionRemaining: this.phase === 'intermission' ? Math.ceil(this.intermissionTicks / TICK_RATE) : 0
+      intermissionRemaining:
+        this.phase === "intermission"
+          ? Math.ceil(this.intermissionTicks / TICK_RATE)
+          : 0,
     };
   }
 
@@ -1701,29 +1964,29 @@ class RoomState {
       }
     }
     this.queueHighlight({
-      type: 'kill',
+      type: "kill",
       killerId: killer?.id || null,
       killerName: killer?.name || null,
       killerColor: killer?.color || null,
       victimId: player.id,
       victimName: player.name,
       victimColor: player.color,
-      cause
+      cause,
     });
     if (player.lastTail) {
       this.food.push({
         id: uuidv4(),
         type: FOOD_TYPES.BASIC,
         x: player.lastTail.x,
-        y: player.lastTail.y
+        y: player.lastTail.y,
       });
     }
   }
 
   checkMatchEnd() {
-    if (this.phase !== 'running') return;
+    if (this.phase !== "running") return;
     const alive = [...this.players.values()].filter((p) => p.alive);
-    if (alive.length <= 1) {
+    if (alive.length === 0) {
       const winner = alive[0] || null;
       if (winner) {
         winner.score += this.settings.winBonus || 0;
@@ -1733,18 +1996,18 @@ class RoomState {
         this.handleTournamentOutcome(winner);
       }
       if (winner && this.tournament?.championId === winner.id) {
-        this.broadcast('room:notification', {
+        this.broadcast("room:notification", {
           id: uuidv4(),
-          type: 'success',
+          type: "success",
           message: `${winner.name}님이 토너먼트 우승을 차지했습니다!`,
-          timestamp: Date.now()
+          timestamp: Date.now(),
         });
       }
       this.queueHighlight({
-        type: 'round-end',
+        type: "round-end",
         winnerId: winner?.id || null,
         winnerName: winner?.name || null,
-        winnerColor: winner?.color || null
+        winnerColor: winner?.color || null,
       });
       const achievementMap = this.gatherRoundAchievements({ winner });
       for (const player of this.players.values()) {
@@ -1755,19 +2018,29 @@ class RoomState {
       }
       const highlightPackage = this.buildHighlightPackage({ winner });
       this.recordTournamentRoundSummary({ highlightPackage, winner });
-      this.broadcast('game:ended', {
+      this.broadcast("game:ended", {
         winnerId: winner?.id || null,
         leaderboard: this.buildLeaderboard(),
         tournament: this.serializeTournament(),
         highlights: highlightPackage,
-        achievements: this.serializeAchievements(achievementMap)
+        achievements: this.serializeAchievements(achievementMap),
       });
-      if (this.tournament && !this.tournament.championId && this.players.size >= 2) {
-        this.phase = 'intermission';
-        const waitSeconds = this.tournament.intermissionSeconds || this.settings.intermissionSeconds || 5;
-        this.intermissionTicks = Math.max(1, Math.round(waitSeconds * TICK_RATE));
+      if (
+        this.tournament &&
+        !this.tournament.championId &&
+        this.players.size >= 2
+      ) {
+        this.phase = "intermission";
+        const waitSeconds =
+          this.tournament.intermissionSeconds ||
+          this.settings.intermissionSeconds ||
+          5;
+        this.intermissionTicks = Math.max(
+          1,
+          Math.round(waitSeconds * TICK_RATE)
+        );
       } else {
-        this.phase = 'ended';
+        this.phase = "ended";
       }
     }
   }
@@ -1782,11 +2055,11 @@ class RoomState {
         win: Boolean(isWinner),
         color: player.color,
         mode: this.modeKey,
-        achievements
+        achievements,
       })
       .then(() => this.pushProfileUpdate(player))
       .catch((error) => {
-        console.error('통계 기록 실패:', error.message);
+        console.error("통계 기록 실패:", error.message);
       });
   }
 
@@ -1795,10 +2068,10 @@ class RoomState {
       .getProfile(player.name)
       .then((profile) => {
         if (!profile) return;
-        io.to(player.socketId).emit('player:profile', profile);
+        io.to(player.socketId).emit("player:profile", profile);
       })
       .catch((error) => {
-        console.error('프로필 갱신 실패:', error.message);
+        console.error("프로필 갱신 실패:", error.message);
       });
   }
 
@@ -1809,11 +2082,14 @@ class RoomState {
       mode: {
         key: this.modeKey,
         label: this.mode.label,
-        description: this.mode.description
+        description: this.mode.description,
       },
       phase: this.phase,
       countdown: Math.ceil(this.countdownTicks / TICK_RATE),
-      intermission: this.phase === 'intermission' ? Math.ceil(this.intermissionTicks / TICK_RATE) : 0,
+      intermission:
+        this.phase === "intermission"
+          ? Math.ceil(this.intermissionTicks / TICK_RATE)
+          : 0,
       players: [...this.players.values()].map((player) => ({
         id: player.id,
         name: player.name,
@@ -1828,7 +2104,9 @@ class RoomState {
           remaining: Math.max(
             0,
             Math.round(
-              typeof data === 'object' && data !== null && typeof data.remaining === 'number'
+              typeof data === "object" &&
+                data !== null &&
+                typeof data.remaining === "number"
                 ? data.remaining
                 : Number(data) || 0
             )
@@ -1836,12 +2114,14 @@ class RoomState {
           total: Math.max(
             0,
             Math.round(
-              typeof data === 'object' && data !== null && typeof data.total === 'number'
+              typeof data === "object" &&
+                data !== null &&
+                typeof data.total === "number"
                 ? data.total
                 : POWERUP_EFFECT_TICKS[effect] || TICK_RATE * 4
             )
-          )
-        }))
+          ),
+        })),
       })),
       food: this.food,
       powerups: this.powerups,
@@ -1849,7 +2129,7 @@ class RoomState {
       events: this.eventFeed.map((entry) => ({ ...entry })),
       round: this.round,
       timestamp: Date.now(),
-      tournament: this.serializeTournament()
+      tournament: this.serializeTournament(),
     };
   }
 
@@ -1861,7 +2141,7 @@ class RoomState {
         score: player.score,
         kills: player.kills,
         alive: player.alive,
-        color: player.color
+        color: player.color,
       }))
       .sort((a, b) => b.score - a.score);
   }
@@ -1871,20 +2151,24 @@ class RoomState {
     for (const player of this.players.values()) {
       const stats = this.roundStats.get(player.id) || {};
       const earned = [];
-      if (this.firstKillAwardedTo && this.firstKillAwardedTo === player.id && (player.kills || 0) > 0) {
-        earned.push('first_blood');
+      if (
+        this.firstKillAwardedTo &&
+        this.firstKillAwardedTo === player.id &&
+        (player.kills || 0) > 0
+      ) {
+        earned.push("first_blood");
       }
       if (winner && winner.id === player.id) {
-        earned.push('survival_champion');
+        earned.push("survival_champion");
       }
       if ((stats.golden || 0) >= 2) {
-        earned.push('golden_gourmet');
+        earned.push("golden_gourmet");
       }
       if ((stats.powerups || 0) >= 3) {
-        earned.push('power_collector');
+        earned.push("power_collector");
       }
       if ((player.kills || 0) >= 3) {
-        earned.push('hunter');
+        earned.push("hunter");
       }
       if (earned.length) {
         achievements.set(player.id, earned);
@@ -1905,22 +2189,22 @@ class RoomState {
           id: definition.id,
           title: definition.title,
           description: definition.description,
-          icon: definition.icon
+          icon: definition.icon,
         }));
       if (!earned.length) continue;
-      earned.sort((a, b) => a.title.localeCompare(b.title, 'ko'));
+      earned.sort((a, b) => a.title.localeCompare(b.title, "ko"));
       results.push({
         playerId,
         name: player.name,
         color: player.color,
-        achievements: earned
+        achievements: earned,
       });
     }
     results.sort((a, b) => {
       if (b.achievements.length !== a.achievements.length) {
         return b.achievements.length - a.achievements.length;
       }
-      return a.name.localeCompare(b.name, 'ko');
+      return a.name.localeCompare(b.name, "ko");
     });
     return results;
   }
@@ -1939,7 +2223,7 @@ class RoomState {
         golden: stats.golden || 0,
         powerups: stats.powerups || 0,
         food: stats.food || 0,
-        survivalSeconds: Math.round(player.survivalTicks / TICK_RATE)
+        survivalSeconds: Math.round(player.survivalTicks / TICK_RATE),
       });
     }
     return snapshot;
@@ -1947,39 +2231,50 @@ class RoomState {
 
   describeHighlight(event) {
     switch (event.type) {
-      case 'kill': {
+      case "kill": {
         if (event.killerName) {
           return {
             title: `${event.killerName}의 결정타`,
-            subtitle: `${event.killerName} ▶ ${event.victimName} (${event.cause === 'collision' ? '충돌 승' : '환경 탈락'})`
+            subtitle: `${event.killerName} ▶ ${event.victimName} (${
+              event.cause === "collision" ? "충돌 승" : "환경 탈락"
+            })`,
           };
         }
         return {
           title: `${event.victimName} 탈락`,
-          subtitle: event.cause === 'wall' ? '벽과 충돌' : '자기 몸에 부딪힘'
+          subtitle: event.cause === "wall" ? "벽과 충돌" : "자기 몸에 부딪힘",
         };
       }
-      case 'golden-food':
+      case "golden-food":
         return {
           title: `${event.playerName} 골든 음식 획득`,
-          subtitle: '대량 성장 & 추가 점수 확보'
+          subtitle: "대량 성장 & 추가 점수 확보",
         };
-      case 'powerup': {
-        const label = POWERUP_TYPES.SHIELD === event.powerup ? '무적' : POWERUP_TYPES.SPEED === event.powerup ? '속도' : '축소';
+      case "powerup": {
+        const label =
+          POWERUP_TYPES.SHIELD === event.powerup
+            ? "무적"
+            : POWERUP_TYPES.SPEED === event.powerup
+            ? "속도"
+            : "축소";
         return {
           title: `${event.playerName} ${label} 파워업`,
-          subtitle: '상황을 뒤집을 준비 완료'
+          subtitle: "상황을 뒤집을 준비 완료",
         };
       }
-      case 'round-end':
+      case "round-end":
         return {
-          title: `${event.winnerName ? `${event.winnerName} 승리` : '라운드 종료'}`,
-          subtitle: event.winnerName ? '토너먼트 포인트 획득!' : '생존자가 없습니다'
+          title: `${
+            event.winnerName ? `${event.winnerName} 승리` : "라운드 종료"
+          }`,
+          subtitle: event.winnerName
+            ? "토너먼트 포인트 획득!"
+            : "생존자가 없습니다",
         };
       default:
         return {
-          title: '하이라이트',
-          subtitle: ''
+          title: "하이라이트",
+          subtitle: "",
         };
     }
   }
@@ -1989,7 +2284,7 @@ class RoomState {
       return {
         winnerId: winner?.id || null,
         winnerName: winner?.name || null,
-        round: this.round
+        round: this.round,
       };
     }
     const byKills = [...stats].sort((a, b) => {
@@ -1997,37 +2292,49 @@ class RoomState {
       return b.score - a.score;
     });
     const byGolden = [...stats].sort((a, b) => {
-      if ((b.golden || 0) !== (a.golden || 0)) return (b.golden || 0) - (a.golden || 0);
+      if ((b.golden || 0) !== (a.golden || 0))
+        return (b.golden || 0) - (a.golden || 0);
       return b.score - a.score;
     });
-    const bySurvival = [...stats].sort((a, b) => b.survivalSeconds - a.survivalSeconds);
+    const bySurvival = [...stats].sort(
+      (a, b) => b.survivalSeconds - a.survivalSeconds
+    );
     return {
       winnerId: winner?.id || null,
       winnerName: winner?.name || null,
       round: this.round,
       topKiller: byKills[0]?.kills ? byKills[0] : null,
       goldenCollector: byGolden[0]?.golden ? byGolden[0] : null,
-      survivor: bySurvival[0] || null
+      survivor: bySurvival[0] || null,
     };
   }
 
   buildHighlightPackage({ winner } = {}) {
     const stats = this.buildRoundStatsSnapshot();
-    const sortedEvents = [...this.roundHighlights].sort((a, b) => a.timestamp - b.timestamp);
+    const sortedEvents = [...this.roundHighlights].sort(
+      (a, b) => a.timestamp - b.timestamp
+    );
     const selectedEvents = [...sortedEvents];
     while (selectedEvents.length > 5) {
-      const removableIndex = selectedEvents.findIndex((event) => event.type !== 'kill');
+      const removableIndex = selectedEvents.findIndex(
+        (event) => event.type !== "kill"
+      );
       if (removableIndex > -1) {
         selectedEvents.splice(removableIndex, 1);
       } else {
         selectedEvents.shift();
       }
     }
-    const lastFrameIndex = this.frameHistory.length ? this.frameHistory.length - 1 : 0;
+    const lastFrameIndex = this.frameHistory.length
+      ? this.frameHistory.length - 1
+      : 0;
     const clips = selectedEvents.map((event) => {
       const windowFrames = Math.round(TICK_RATE * 2);
       const startFrame = Math.max(0, (event.frameIndex || 0) - windowFrames);
-      const endFrame = Math.min(lastFrameIndex, (event.frameIndex || 0) + windowFrames);
+      const endFrame = Math.min(
+        lastFrameIndex,
+        (event.frameIndex || 0) + windowFrames
+      );
       const frames = this.frameHistory.slice(startFrame, endFrame + 1);
       const { title, subtitle } = this.describeHighlight(event);
       const tags = this.deriveHighlightTags(event);
@@ -2050,10 +2357,10 @@ class RoomState {
           playerId: event.playerId || null,
           winnerId: event.winnerId || null,
           winnerName: event.winnerName || null,
-          cause: event.cause || null
+          cause: event.cause || null,
         },
         tags,
-        frames
+        frames,
       };
     });
     const keyEvents = selectedEvents.map((event) => {
@@ -2065,44 +2372,44 @@ class RoomState {
         subtitle: descriptor.subtitle,
         icon: this.resolveMarkerIcon(event),
         accent: this.resolveMarkerAccent(event),
-        timestamp: event.timestamp || Date.now()
+        timestamp: event.timestamp || Date.now(),
       };
     });
     return {
       clips,
       stats,
       summary: this.buildRoundSummary(stats, winner),
-      keyEvents
+      keyEvents,
     };
   }
 
   resolveMarkerIcon(event) {
     switch (event.type) {
-      case 'kill':
-        return '⚔️';
-      case 'golden-food':
-        return '✨';
-      case 'powerup':
-        return POWERUP_ICONS[event.powerup] || '🔋';
-      case 'round-end':
-        return '🏁';
+      case "kill":
+        return "⚔️";
+      case "golden-food":
+        return "✨";
+      case "powerup":
+        return POWERUP_ICONS[event.powerup] || "🔋";
+      case "round-end":
+        return "🏁";
       default:
-        return '';
+        return "";
     }
   }
 
   resolveMarkerAccent(event) {
     switch (event.type) {
-      case 'kill':
-        return event.killerColor || event.victimColor || '#ff4d4f';
-      case 'golden-food':
-        return event.playerColor || '#f5b301';
-      case 'powerup':
-        return event.playerColor || '#13c2c2';
-      case 'round-end':
-        return event.winnerColor || '#9254de';
+      case "kill":
+        return event.killerColor || event.victimColor || "#ff4d4f";
+      case "golden-food":
+        return event.playerColor || "#f5b301";
+      case "powerup":
+        return event.playerColor || "#13c2c2";
+      case "round-end":
+        return event.winnerColor || "#9254de";
       default:
-        return '#faad14';
+        return "#faad14";
     }
   }
 
@@ -2113,19 +2420,22 @@ class RoomState {
     const markers = [];
     for (const event of this.roundHighlights) {
       if (!event || !Number.isFinite(event.frameIndex)) continue;
-      const descriptor = this.describeHighlight(event) || { title: '이벤트', subtitle: '' };
+      const descriptor = this.describeHighlight(event) || {
+        title: "이벤트",
+        subtitle: "",
+      };
       const feedEntry = this.buildEventFeedEntry(event);
       const marker = {
         id: event.id,
         frameIndex: Math.max(0, Math.round(event.frameIndex)),
-        type: event.type || 'event',
-        title: descriptor.title || '이벤트',
-        subtitle: descriptor.subtitle || '',
+        type: event.type || "event",
+        title: descriptor.title || "이벤트",
+        subtitle: descriptor.subtitle || "",
         icon: this.resolveMarkerIcon(event),
         accent: feedEntry?.accent || this.resolveMarkerAccent(event),
         timestamp: event.timestamp || Date.now(),
         round: Number.isFinite(event.round) ? event.round : this.round,
-        powerup: event.powerup || feedEntry?.meta?.powerup || null
+        powerup: event.powerup || feedEntry?.meta?.powerup || null,
       };
       markers.push(marker);
     }
@@ -2134,32 +2444,32 @@ class RoomState {
   }
 
   deriveHighlightTags(event) {
-    const tags = new Set(['highlight']);
+    const tags = new Set(["highlight"]);
     switch (event.type) {
-      case 'kill':
-        tags.add('kill');
-        tags.add('combat');
-        if (event.cause === 'collision') tags.add('collision');
-        if (event.cause === 'self') tags.add('self-hit');
-        if (event.cause === 'wall') tags.add('wall');
+      case "kill":
+        tags.add("kill");
+        tags.add("combat");
+        if (event.cause === "collision") tags.add("collision");
+        if (event.cause === "self") tags.add("self-hit");
+        if (event.cause === "wall") tags.add("wall");
         if (event.killerId && event.killerId === this.firstKillAwardedTo) {
-          tags.add('first-kill');
+          tags.add("first-kill");
         }
         break;
-      case 'golden-food':
-        tags.add('golden');
-        tags.add('food');
-        tags.add('growth');
+      case "golden-food":
+        tags.add("golden");
+        tags.add("food");
+        tags.add("growth");
         break;
-      case 'powerup':
-        tags.add('powerup');
+      case "powerup":
+        tags.add("powerup");
         if (event.powerup) tags.add(`powerup:${event.powerup}`);
         break;
-      case 'round-end':
-        tags.add('round-end');
-        tags.add('summary');
-        if (event.winnerId) tags.add('victory');
-        if (!event.winnerId) tags.add('draw');
+      case "round-end":
+        tags.add("round-end");
+        tags.add("summary");
+        if (event.winnerId) tags.add("victory");
+        if (!event.winnerId) tags.add("draw");
         break;
       default:
         break;
@@ -2175,10 +2485,10 @@ class RoomState {
         name: player.name,
         color: player.color,
         segments: player.segments,
-        alive: player.alive
+        alive: player.alive,
       })),
       food: state.food,
-      powerups: state.powerups
+      powerups: state.powerups,
     };
     this.frameHistory.push(snapshot);
     const maxFrames = TICK_RATE * 120;
@@ -2194,19 +2504,22 @@ class RoomState {
       this.pendingHighlights = [];
       const maxHighlights = 24;
       if (this.roundHighlights.length > maxHighlights) {
-        this.roundHighlights.splice(0, this.roundHighlights.length - maxHighlights);
+        this.roundHighlights.splice(
+          0,
+          this.roundHighlights.length - maxHighlights
+        );
       }
     }
   }
 
   update() {
     this.tickPhase();
-    if (this.phase === 'waiting') {
-      this.broadcast('game:state', this.serialize());
+    if (this.phase === "waiting") {
+      this.broadcast("game:state", this.serialize());
       return;
     }
 
-    if (this.phase === 'running') {
+    if (this.phase === "running") {
       for (const player of this.players.values()) {
         this.handleMovement(player);
         this.handleFoodAndPowerups(player);
@@ -2218,20 +2531,28 @@ class RoomState {
 
     const state = this.serialize();
     this.pushFrame(state);
-    this.broadcast('game:state', state);
+    this.broadcast("game:state", state);
   }
 }
 
 const createRoom = ({ name, hostId, isPrivate, modeKey }) => {
   const id = uuidv4().slice(0, 6).toUpperCase();
-  const room = new RoomState({ id, name: name || `Room ${id}`, hostId, isPrivate, modeKey });
+  const room = new RoomState({
+    id,
+    name: name || `Room ${id}`,
+    hostId,
+    isPrivate,
+    modeKey,
+  });
   rooms.set(id, room);
   return room;
 };
 
 const getJoinableRooms = () => {
   return [...rooms.values()]
-    .filter((room) => !room.isPrivate && room.players.size < MAX_PLAYERS_PER_ROOM)
+    .filter(
+      (room) => !room.isPrivate && room.players.size < MAX_PLAYERS_PER_ROOM
+    )
     .map((room) => ({
       id: room.id,
       name: room.name,
@@ -2239,65 +2560,99 @@ const getJoinableRooms = () => {
       phase: room.phase,
       mode: {
         key: room.modeKey,
-        label: room.mode.label
-      }
+        label: room.mode.label,
+      },
     }));
 };
 
-io.on('connection', (socket) => {
-  socket.emit('rooms:list', getJoinableRooms());
-  socket.on('rooms:refresh', () => {
-    socket.emit('rooms:list', getJoinableRooms());
+io.on("connection", (socket) => {
+  socket.emit("rooms:list", getJoinableRooms());
+  socket.on("rooms:refresh", () => {
+    socket.emit("rooms:list", getJoinableRooms());
   });
 
-  socket.on('room:create', ({ name, isPrivate, playerName, mode, preferredColor }, callback) => {
-    const safeName = typeof playerName === 'string' && playerName.trim() ? playerName.trim().slice(0, 16) : 'Player';
-    const modeKey = typeof mode === 'string' ? mode.toLowerCase() : DEFAULT_MODE_KEY;
-    const room = createRoom({ name, hostId: socket.id, isPrivate, modeKey });
-    const joinResult = joinRoom({ room, socket, playerName: safeName, preferredColor }, callback);
-    if (joinResult.error) {
-      rooms.delete(room.id);
+  socket.on(
+    "room:create",
+    ({ name, isPrivate, playerName, mode, preferredColor }, callback) => {
+      const safeName =
+        typeof playerName === "string" && playerName.trim()
+          ? playerName.trim().slice(0, 16)
+          : "Player";
+      const modeKey =
+        typeof mode === "string" ? mode.toLowerCase() : DEFAULT_MODE_KEY;
+      const room = createRoom({ name, hostId: socket.id, isPrivate, modeKey });
+      const joinResult = joinRoom(
+        { room, socket, playerName: safeName, preferredColor },
+        callback
+      );
+      if (joinResult.error) {
+        rooms.delete(room.id);
+      }
     }
-  });
+  );
 
-  socket.on('room:join', ({ roomId, playerName, preferredColor }, callback) => {
+  socket.on("room:join", ({ roomId, playerName, preferredColor }, callback) => {
     const room = rooms.get(String(roomId).toUpperCase());
-    const safeName = typeof playerName === 'string' && playerName.trim() ? playerName.trim().slice(0, 16) : 'Player';
+    const safeName =
+      typeof playerName === "string" && playerName.trim()
+        ? playerName.trim().slice(0, 16)
+        : "Player";
     if (!room) {
-      callback?.({ error: '방을 찾을 수 없습니다.' });
+      callback?.({ error: "방을 찾을 수 없습니다." });
       return;
     }
     joinRoom({ room, socket, playerName: safeName, preferredColor }, callback);
   });
 
-  socket.on('room:quick-join', ({ playerName, preferredColor, mode }, callback) => {
-    const safeName = typeof playerName === 'string' && playerName.trim() ? playerName.trim().slice(0, 16) : 'Player';
-    const room = [...rooms.values()].find((candidate) => !candidate.isPrivate && candidate.players.size < MAX_PLAYERS_PER_ROOM);
-    if (room) {
-      joinRoom({ room, socket, playerName: safeName, preferredColor }, callback);
-      return;
+  socket.on(
+    "room:quick-join",
+    ({ playerName, preferredColor, mode }, callback) => {
+      const safeName =
+        typeof playerName === "string" && playerName.trim()
+          ? playerName.trim().slice(0, 16)
+          : "Player";
+      const room = [...rooms.values()].find(
+        (candidate) =>
+          !candidate.isPrivate && candidate.players.size < MAX_PLAYERS_PER_ROOM
+      );
+      if (room) {
+        joinRoom(
+          { room, socket, playerName: safeName, preferredColor },
+          callback
+        );
+        return;
+      }
+      const requestedMode =
+        typeof mode === "string" ? mode.toLowerCase() : DEFAULT_MODE_KEY;
+      const created = createRoom({
+        name: "Quick Match",
+        hostId: socket.id,
+        isPrivate: false,
+        modeKey: requestedMode,
+      });
+      joinRoom(
+        { room: created, socket, playerName: safeName, preferredColor },
+        callback
+      );
     }
-    const requestedMode = typeof mode === 'string' ? mode.toLowerCase() : DEFAULT_MODE_KEY;
-    const created = createRoom({ name: 'Quick Match', hostId: socket.id, isPrivate: false, modeKey: requestedMode });
-    joinRoom({ room: created, socket, playerName: safeName, preferredColor }, callback);
-  });
+  );
 
-  socket.on('player:input', ({ playerId, direction }) => {
+  socket.on("player:input", ({ playerId, direction }) => {
     const room = [...rooms.values()].find((r) => r.players.has(playerId));
     if (!room) return;
     const player = room.players.get(playerId);
     if (!player || !player.alive) return;
     const { x, y } = direction || {};
-    if (typeof x !== 'number' || typeof y !== 'number') return;
+    if (typeof x !== "number" || typeof y !== "number") return;
     if (Math.abs(x) === Math.abs(y)) return; // disallow diagonals
     if (x === -player.direction.x && y === -player.direction.y) return;
     player.pendingDirection = { x, y };
   });
 
-  socket.on('player:color-change', ({ playerId, color }, callback) => {
+  socket.on("player:color-change", ({ playerId, color }, callback) => {
     const room = [...rooms.values()].find((r) => r.players.has(playerId));
     if (!room) {
-      callback?.({ error: '방을 찾을 수 없습니다.' });
+      callback?.({ error: "방을 찾을 수 없습니다." });
       return;
     }
     const result = room.changePlayerColor(playerId, color);
@@ -2306,44 +2661,49 @@ io.on('connection', (socket) => {
       return;
     }
     const player = room.players.get(playerId);
-    room.broadcast('room:notification', {
+    room.broadcast("room:notification", {
       id: uuidv4(),
-      type: 'info',
+      type: "info",
       message: `${player.name}님이 색상을 변경했습니다.`,
-      timestamp: Date.now()
+      timestamp: Date.now(),
     });
     callback?.({ success: true, color: player.color });
   });
 
-  socket.on('chat:message', ({ roomId, playerId, message }) => {
+  socket.on("chat:message", ({ roomId, playerId, message }) => {
     const room = rooms.get(roomId);
     if (!room) return;
     const player = room.players.get(playerId);
     if (!player) return;
-    const text = typeof message === 'string' ? message.trim().slice(0, 140) : '';
+    const text =
+      typeof message === "string" ? message.trim().slice(0, 140) : "";
     if (!text) return;
-    io.to(roomId).emit('chat:message', {
+    io.to(roomId).emit("chat:message", {
       id: uuidv4(),
       roomId,
       author: player.name,
       color: player.color,
       message: text,
-      timestamp: Date.now()
+      timestamp: Date.now(),
     });
   });
 
-  socket.on('room:request-replay', ({ roomId }) => {
+  socket.on("room:request-replay", ({ roomId }) => {
     const room = rooms.get(roomId);
     if (!room) return;
-    socket.emit('room:replay', {
+    socket.emit("room:replay", {
       roomId,
       frames: room.frameHistory,
       markers: room.buildReplayMarkers(),
-      world: { width: WORLD_WIDTH, height: WORLD_HEIGHT, segmentSize: SEGMENT_SIZE }
+      world: {
+        width: WORLD_WIDTH,
+        height: WORLD_HEIGHT,
+        segmentSize: SEGMENT_SIZE,
+      },
     });
   });
 
-  socket.on('disconnect', () => {
+  socket.on("disconnect", () => {
     for (const room of rooms.values()) {
       for (const player of [...room.players.values()]) {
         if (player.socketId === socket.id) {
@@ -2360,52 +2720,63 @@ io.on('connection', (socket) => {
 
 const joinRoom = ({ room, socket, playerName, preferredColor }, callback) => {
   if (room.players.size >= MAX_PLAYERS_PER_ROOM) {
-    callback?.({ error: '방이 가득 찼습니다.' });
-    return { error: 'full' };
+    callback?.({ error: "방이 가득 찼습니다." });
+    return { error: "full" };
   }
 
   for (const existing of room.players.values()) {
     if (existing.name.toLowerCase() === playerName.toLowerCase()) {
-      callback?.({ error: '이미 존재하는 이름입니다.' });
-      return { error: 'duplicate' };
+      callback?.({ error: "이미 존재하는 이름입니다." });
+      return { error: "duplicate" };
     }
   }
 
   const playerId = uuidv4();
   const color = room.assignColor(preferredColor);
-  const player = new PlayerState({ id: playerId, name: playerName, color, socketId: socket.id });
+  const player = new PlayerState({
+    id: playerId,
+    name: playerName,
+    color,
+    socketId: socket.id,
+  });
   room.addPlayer(player);
   socket.join(room.id);
-  socket.emit('player:assigned', {
+  socket.emit("player:assigned", {
     playerId,
     roomId: room.id,
     color,
     mode: {
       key: room.modeKey,
-      label: room.mode.label
+      label: room.mode.label,
     },
-    world: { width: WORLD_WIDTH, height: WORLD_HEIGHT, segmentSize: SEGMENT_SIZE }
+    world: {
+      width: WORLD_WIDTH,
+      height: WORLD_HEIGHT,
+      segmentSize: SEGMENT_SIZE,
+    },
   });
 
-  statsStore.rememberPreference({ name: playerName, color, mode: room.modeKey }).catch((error) => {
-    console.error('플레이어 선호 설정 저장 실패:', error.message);
-  });
+  statsStore
+    .rememberPreference({ name: playerName, color, mode: room.modeKey })
+    .catch((error) => {
+      console.error("플레이어 선호 설정 저장 실패:", error.message);
+    });
 
   statsStore
     .getProfile(playerName)
     .then((profile) => {
-      socket.emit('player:profile', profile);
+      socket.emit("player:profile", profile);
     })
     .catch((error) => {
-      console.error('플레이어 프로필 전송 실패:', error.message);
+      console.error("플레이어 프로필 전송 실패:", error.message);
     });
 
-  room.broadcast('rooms:updated', getJoinableRooms());
-  room.broadcast('room:notification', {
+  room.broadcast("rooms:updated", getJoinableRooms());
+  room.broadcast("room:notification", {
     id: uuidv4(),
-    type: 'join',
+    type: "join",
     message: `${playerName}님이 게임에 참가했습니다.`,
-    timestamp: Date.now()
+    timestamp: Date.now(),
   });
 
   callback?.({
@@ -2416,8 +2787,8 @@ const joinRoom = ({ room, socket, playerName, preferredColor }, callback) => {
     color,
     mode: {
       key: room.modeKey,
-      label: room.mode.label
-    }
+      label: room.mode.label,
+    },
   });
   return { player };
 };
@@ -2430,7 +2801,7 @@ const checkRoomCleanup = (roomId) => {
   }
 };
 
-app.get('/api/stats', async (req, res) => {
+app.get("/api/stats", async (req, res) => {
   try {
     const snapshot = await statsStore.snapshot();
     const players = snapshot.players.map((stats) => {
@@ -2440,32 +2811,34 @@ app.get('/api/stats', async (req, res) => {
         games,
         wins: stats.wins,
         averageScore: games ? Math.round(stats.totalScore / games) : 0,
-        winRate: games ? +(stats.wins / games * 100).toFixed(1) : 0,
-        averageSurvivalSeconds: games ? +(stats.totalSurvivalTicks / games / TICK_RATE).toFixed(1) : 0,
-        kills: stats.kills
+        winRate: games ? +((stats.wins / games) * 100).toFixed(1) : 0,
+        averageSurvivalSeconds: games
+          ? +(stats.totalSurvivalTicks / games / TICK_RATE).toFixed(1)
+          : 0,
+        kills: stats.kills,
       };
     });
     res.json({
       updatedAt: snapshot.updatedAt,
-      players
+      players,
     });
   } catch (error) {
-    res.status(500).json({ error: '통계를 불러오지 못했습니다.' });
+    res.status(500).json({ error: "통계를 불러오지 못했습니다." });
   }
 });
 
-app.get('/api/event-logs', async (req, res) => {
+app.get("/api/event-logs", async (req, res) => {
   const query = req.query || {};
   const parseMultiValue = (value) => {
     if (Array.isArray(value)) {
       return value
-        .flatMap((token) => String(token).split(','))
+        .flatMap((token) => String(token).split(","))
         .map((token) => token.trim())
         .filter(Boolean);
     }
-    if (typeof value === 'string') {
+    if (typeof value === "string") {
       return value
-        .split(',')
+        .split(",")
         .map((token) => token.trim())
         .filter(Boolean);
     }
@@ -2474,13 +2847,16 @@ app.get('/api/event-logs', async (req, res) => {
 
   const types = parseMultiValue(query.type).slice(0, 6);
   const tags = parseMultiValue(query.tag || query.tags).slice(0, 6);
-  const highlightParam = typeof query.highlight === 'string' ? query.highlight.toLowerCase() : query.highlight;
+  const highlightParam =
+    typeof query.highlight === "string"
+      ? query.highlight.toLowerCase()
+      : query.highlight;
   const highlight =
-    highlightParam === 'true' || highlightParam === true
+    highlightParam === "true" || highlightParam === true
       ? true
-      : highlightParam === 'false' || highlightParam === false
-        ? false
-        : undefined;
+      : highlightParam === "false" || highlightParam === false
+      ? false
+      : undefined;
 
   const options = {
     limit: query.limit,
@@ -2488,11 +2864,15 @@ app.get('/api/event-logs', async (req, res) => {
     types,
     tags,
     highlight,
-    roomId: typeof query.roomId === 'string' ? query.roomId.trim() : undefined,
-    mode: typeof query.mode === 'string' ? query.mode.trim() : undefined,
-    playerId: typeof query.playerId === 'string' ? query.playerId.trim() : undefined,
-    playerName: typeof query.playerName === 'string' ? query.playerName.trim() : undefined,
-    search: typeof query.search === 'string' ? query.search.trim() : undefined
+    roomId: typeof query.roomId === "string" ? query.roomId.trim() : undefined,
+    mode: typeof query.mode === "string" ? query.mode.trim() : undefined,
+    playerId:
+      typeof query.playerId === "string" ? query.playerId.trim() : undefined,
+    playerName:
+      typeof query.playerName === "string"
+        ? query.playerName.trim()
+        : undefined,
+    search: typeof query.search === "string" ? query.search.trim() : undefined,
   };
 
   try {
@@ -2503,7 +2883,7 @@ app.get('/api/event-logs', async (req, res) => {
         hasMore: result.hasMore,
         nextCursor: result.nextCursor,
         nextCursorIso: result.nextCursorIso,
-        limit: result.limit
+        limit: result.limit,
       },
       meta: {
         source: result.source,
@@ -2516,27 +2896,27 @@ app.get('/api/event-logs', async (req, res) => {
           playerId: options.playerId || null,
           playerName: options.playerName || null,
           search: options.search || null,
-          before: options.before || null
-        }
-      }
+          before: options.before || null,
+        },
+      },
     });
   } catch (error) {
-    console.error('이벤트 로그 API 오류:', error.message);
-    res.status(500).json({ error: '이벤트 로그를 불러오지 못했습니다.' });
+    console.error("이벤트 로그 API 오류:", error.message);
+    res.status(500).json({ error: "이벤트 로그를 불러오지 못했습니다." });
   }
 });
 
-app.get('/api/profile/:name', async (req, res) => {
-  const name = String(req.params.name || '').trim();
+app.get("/api/profile/:name", async (req, res) => {
+  const name = String(req.params.name || "").trim();
   if (!name) {
-    res.status(400).json({ error: '플레이어 이름이 필요합니다.' });
+    res.status(400).json({ error: "플레이어 이름이 필요합니다." });
     return;
   }
   try {
     const profile = await statsStore.getProfile(name);
     const games = profile.games || 0;
     const averageScore = games ? Math.round(profile.totalScore / games) : 0;
-    const winRate = games ? +(profile.wins / games * 100).toFixed(1) : 0;
+    const winRate = games ? +((profile.wins / games) * 100).toFixed(1) : 0;
     const averageSurvivalSeconds = games
       ? +(profile.totalSurvivalTicks / games / TICK_RATE).toFixed(1)
       : 0;
@@ -2556,10 +2936,10 @@ app.get('/api/profile/:name', async (req, res) => {
       lastMode: profile.lastMode || null,
       achievements: profile.achievements || {},
       updatedAt: profile.updatedAt || Date.now(),
-      createdAt: profile.createdAt || null
+      createdAt: profile.createdAt || null,
     });
   } catch (error) {
-    res.status(500).json({ error: '프로필을 불러오지 못했습니다.' });
+    res.status(500).json({ error: "프로필을 불러오지 못했습니다." });
   }
 });
 

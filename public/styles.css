@@ -96,6 +96,47 @@ body {
   font-size: 13px;
 }
 
+.status-group {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.status--latency {
+  min-width: 94px;
+  text-align: center;
+  background: rgba(255, 255, 255, 0.06);
+  color: var(--text-muted);
+  transition: background 0.3s ease, color 0.3s ease;
+}
+
+.status--latency[data-quality='good'] {
+  background: rgba(82, 196, 26, 0.16);
+  color: #73d13d;
+}
+
+.status--latency[data-quality='fair'] {
+  background: rgba(250, 173, 20, 0.18);
+  color: #faad14;
+}
+
+.status--latency[data-quality='poor'] {
+  background: rgba(255, 77, 79, 0.2);
+  color: #ff7875;
+}
+
+.status--latency[data-quality='timeout'],
+.status--latency[data-quality='lost'] {
+  background: rgba(255, 77, 79, 0.25);
+  color: var(--danger);
+}
+
+.status--latency[data-quality='reconnecting'] {
+  background: rgba(64, 169, 255, 0.18);
+  color: var(--accent);
+}
+
 .status--error {
   background: rgba(255, 77, 79, 0.12);
   color: var(--danger);

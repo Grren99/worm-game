@@ -1,5 +1,6 @@
 export const elements = {
   status: document.getElementById('connection-status'),
+  latencyIndicator: document.getElementById('latency-indicator'),
   toggleAudio: document.getElementById('toggle-audio'),
   replayButton: document.getElementById('request-replay'),
   closeReplay: document.getElementById('close-replay'),

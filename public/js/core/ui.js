@@ -95,6 +95,7 @@ export class UIManager {
     this.renderColorPalette();
     this.updateModeIndicator();
     this.eventFeed.init();
+    this.updateLatency(null, { reason: 'init' });
     this.restoreAudioSettings();
     this.restoreAccessibilityOptions();
     this.attachEventListeners();
@@ -169,6 +170,48 @@ export class UIManager {
   setStatus(text, error = false) {
     this.elements.status.textContent = text;
     this.elements.status.classList.toggle('status--error', error);
+  }
+
+  updateLatency(latency, { quality = 'unknown', reason = 'measuring', measuredAt = null } = {}) {
+    const indicator = this.elements.latencyIndicator;
+    if (!indicator) return;
+
+    let label = '핑 측정 중...';
+    const isNumber = Number.isFinite(latency);
+    const resolvedQuality = quality || 'unknown';
+    let isErrorState = false;
+
+    if (isNumber) {
+      const rounded = Math.max(0, Math.round(latency));
+      label = `핑 ${rounded}ms`;
+      indicator.title = measuredAt ? `최근 측정: ${new Date(measuredAt).toLocaleTimeString()}` : '최근 핑 측정값';
+      isErrorState = resolvedQuality === 'poor';
+    } else {
+      switch (reason) {
+        case 'timeout':
+          label = '핑 타임아웃';
+          isErrorState = true;
+          break;
+        case 'disconnected':
+          label = '연결 끊김';
+          isErrorState = true;
+          break;
+        case 'reconnecting':
+          label = '재연결 중...';
+          break;
+        case 'init':
+          label = '핑 측정 중...';
+          break;
+        default:
+          label = '핑 측정 중...';
+      }
+      indicator.title = '네트워크 상태';
+    }
+
+    indicator.dataset.quality = resolvedQuality;
+    indicator.classList.toggle('status--error', isErrorState);
+    indicator.textContent = label;
+    indicator.setAttribute('aria-label', label);
   }
 
   notify(message, type = 'info') {
