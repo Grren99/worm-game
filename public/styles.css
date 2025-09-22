@@ -42,7 +42,6 @@ body {
   height: 100%;
   background: radial-gradient(circle at top, #10131a 0%, #040506 70%);
   color: var(--text);
-  overflow: hidden;
 }
 
 body {
@@ -158,6 +157,8 @@ body {
   grid-template-columns: 280px 1fr 280px;
   gap: 16px;
   padding: 16px;
+  height: calc(100vh - var(--header-height) - var(--footer-height));
+  overflow: hidden;
 }
 
 .panel {
@@ -168,6 +169,7 @@ body {
   overflow-y: auto;
   overflow-x: hidden;
   padding-right: 8px;
+  min-height: 0;
 }
 
 .panel::-webkit-scrollbar {
