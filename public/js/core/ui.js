@@ -5,7 +5,8 @@ import {
   PLAYER_COLORS,
   PLAYER_COLOR_KEYS,
   POWERUP_ICON,
-  POWERUP_LABEL
+  POWERUP_LABEL,
+  TICK_RATE
 } from './state.js';
 import { recommendClips } from './highlightRecommender.js';
 import { validateHighlightClip } from './highlightValidator.js';
@@ -407,8 +408,36 @@ export class UIManager {
       return;
     }
     this.elements.playerStatus.textContent = me.alive ? '전투 중' : '탈락 (관전 가능)';
-    this.elements.effectsList.innerHTML = (me.effects || [])
-      .map((effect) => `<li>${POWERUP_ICON[effect] || '✨'} ${POWERUP_LABEL[effect] || effect}</li>`)
+    const effects = Array.isArray(me.effects) ? me.effects : [];
+    this.elements.effectsList.innerHTML = effects
+      .map((entry) => {
+        const type = typeof entry === 'string' ? entry : entry?.type;
+        if (!type) return '';
+        const label = POWERUP_LABEL[type] || type;
+        const icon = POWERUP_ICON[type] || '✨';
+        const totalTicks = typeof entry?.total === 'number' ? entry.total : null;
+        const remainingTicks = typeof entry?.remaining === 'number' ? Math.max(0, entry.remaining) : null;
+        const ratio = totalTicks ? Math.max(0, Math.min(1, remainingTicks / totalTicks)) : null;
+        const percent = ratio !== null ? Math.round(ratio * 100) : null;
+        const seconds = remainingTicks !== null ? Math.ceil(remainingTicks / TICK_RATE) : null;
+        const timerMarkup =
+          seconds !== null
+            ? `<span class="badge-timer" aria-label="남은 시간 ${seconds}초">${seconds}s</span>`
+            : '';
+        const progressMarkup =
+          percent !== null
+            ? `<span class="badge-progress"><span style="width:${percent}%"></span></span>`
+            : '';
+        return `
+          <li data-effect="${type}">
+            <div class="badge-row">
+              <span class="badge-label">${icon} ${label}</span>
+              ${timerMarkup}
+            </div>
+            ${progressMarkup}
+          </li>`;
+      })
+      .filter(Boolean)
       .join('');
     this.renderPlayerProfile();
   }

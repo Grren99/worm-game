@@ -167,6 +167,16 @@ export class NetworkController {
   }
 
   handleGameState(gameState) {
+    if (Array.isArray(gameState?.players)) {
+      gameState.players = gameState.players.map((player) => {
+        const normalized = this.normalizeEffects(player.effects);
+        return {
+          ...player,
+          effects: normalized.effects,
+          effectTypes: normalized.types
+        };
+      });
+    }
     const prevState = this.state.game;
     const prevPlayers = buildPlayerMap(prevState?.players);
 
@@ -209,6 +219,9 @@ export class NetworkController {
     if (this.state.playerId) {
       const me = gameState.players?.find((p) => p.id === this.state.playerId);
       if (me) {
+        if (this.audio?.applyEffectDynamics) {
+          this.audio.applyEffectDynamics(me.effects || []);
+        }
         const previousMe = prevPlayers.get(me.id);
         if (previousMe) {
           if (me.score > previousMe.score) {
@@ -258,9 +271,47 @@ export class NetworkController {
     this.state.lastState = gameState;
   }
 
+  normalizeEffects(rawEffects) {
+    const list = Array.isArray(rawEffects) ? rawEffects : [];
+    const effects = [];
+    const types = [];
+    list.forEach((item) => {
+      if (typeof item === 'string') {
+        effects.push({ type: item, remaining: null, total: null });
+        types.push(item);
+        return;
+      }
+      if (!item || typeof item !== 'object') return;
+      const type = item.type || item.effect || item.name;
+      if (!type) return;
+      const remaining = Number.isFinite(item.remaining) ? item.remaining : null;
+      const total = Number.isFinite(item.total) ? item.total : null;
+      effects.push({ type, remaining, total });
+      types.push(type);
+    });
+    return { effects, types };
+  }
+
+  getEffectTypes(source) {
+    if (!source) return [];
+    if (Array.isArray(source.effectTypes) && source.effectTypes.length) {
+      return source.effectTypes;
+    }
+    const effects = Array.isArray(source.effects) ? source.effects : [];
+    return effects
+      .map((effect) => {
+        if (typeof effect === 'string') return effect;
+        if (effect && typeof effect === 'object') {
+          return effect.type || effect.effect || effect.name;
+        }
+        return null;
+      })
+      .filter(Boolean);
+  }
+
   emitEffectBursts(current, previous, { isLocal = false } = {}) {
-    const before = new Set(previous?.effects || []);
-    const after = new Set(current?.effects || []);
+    const before = new Set(this.getEffectTypes(previous));
+    const after = new Set(this.getEffectTypes(current));
     const head = current?.segments?.[0] || previous?.segments?.[0];
     if (!head) return;
 

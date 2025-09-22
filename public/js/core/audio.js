@@ -1,3 +1,5 @@
+import { TICK_RATE } from './state.js';
+
 const POWERUP_AUDIO = {
   speed: {
     start: [
@@ -336,6 +338,22 @@ export class AudioManager {
     this.playSequence(definition.end, { intensity, defaultBus: 'powerup' });
   }
 
+  playPowerupWarning(effect, { critical = false } = {}) {
+    if (!this.state.audioEnabled) return;
+    const baseFreq =
+      effect === 'speed' ? 780 : effect === 'shield' ? 620 : effect === 'shrink' ? 540 : 600;
+    const steps = critical
+      ? [
+          { freq: baseFreq + 40, duration: 0.12, type: 'square', gainValue: 0.2 },
+          { freq: baseFreq - 140, duration: 0.16, type: 'triangle', gainValue: 0.18, delay: 0.06 }
+        ]
+      : [
+          { freq: baseFreq - 20, duration: 0.1, type: 'square', gainValue: 0.16 },
+          { freq: baseFreq + 80, duration: 0.12, type: 'triangle', gainValue: 0.12, delay: 0.05 }
+        ];
+    this.playSequence(steps, { defaultBus: 'powerup' });
+  }
+
   startEffectLoop(effect, { playIntro = true } = {}) {
     if (!this.state.audioEnabled || !this.context) return;
     if (this.effectLoops.has(effect)) return;
@@ -373,7 +391,7 @@ export class AudioManager {
     gain.gain.setValueAtTime(0.0001, now);
     gain.gain.exponentialRampToValueAtTime(targetGain, now + fadeIn);
     osc.start(now);
-    this.effectLoops.set(effect, { osc, gain, lfo, lfoGain });
+    this.effectLoops.set(effect, { osc, gain, lfo, lfoGain, defaultGain: targetGain, stage: 'normal' });
   }
 
   stopEffectLoop(effect, { playTail = true, immediate = false } = {}) {
@@ -431,7 +449,12 @@ export class AudioManager {
       this.stopAllEffectLoops({ playTail: false });
       return;
     }
-    const active = new Set(me.effects || []);
+    const effectTypes = Array.isArray(me.effectTypes)
+      ? me.effectTypes
+      : (me.effects || [])
+          .map((effect) => (typeof effect === 'string' ? effect : effect?.type))
+          .filter(Boolean);
+    const active = new Set(effectTypes);
     for (const effect of active) {
       this.startEffectLoop(effect, { playIntro: false });
     }
@@ -439,6 +462,78 @@ export class AudioManager {
       if (!active.has(effect)) {
         this.stopEffectLoop(effect, { playTail: false, immediate: true });
       }
+    }
+  }
+
+  adjustEffectLoopGain(loop, target, duration = 0.2) {
+    if (!this.context || !loop?.gain) return;
+    const now = this.context.currentTime;
+    const safeCurrent = Math.max(0.0001, loop.gain.gain.value || loop.defaultGain || 0.0001);
+    const safeTarget = Math.max(0.0001, target);
+    loop.gain.gain.cancelScheduledValues(now);
+    loop.gain.gain.setValueAtTime(safeCurrent, now);
+    loop.gain.gain.linearRampToValueAtTime(safeTarget, now + Math.max(0.05, duration));
+  }
+
+  applyEffectDynamics(effects = []) {
+    if (!this.context || !this.state.audioEnabled) return;
+    const effectMap = new Map();
+    (Array.isArray(effects) ? effects : []).forEach((entry) => {
+      if (typeof entry === 'string') {
+        effectMap.set(entry, { remaining: null, total: null });
+        return;
+      }
+      if (!entry || typeof entry !== 'object') return;
+      const type = entry.type || entry.effect || entry.name;
+      if (!type) return;
+      effectMap.set(type, {
+        remaining: Number.isFinite(entry.remaining) ? entry.remaining : null,
+        total: Number.isFinite(entry.total) ? entry.total : null
+      });
+    });
+
+    for (const [effect, loop] of this.effectLoops.entries()) {
+      const meta = effectMap.get(effect);
+      if (!meta) {
+        if (loop.stage !== 'normal') {
+          this.adjustEffectLoopGain(loop, loop.defaultGain || 0.05);
+          loop.stage = 'normal';
+        }
+        continue;
+      }
+
+      const { remaining, total } = meta;
+      if (!Number.isFinite(remaining) || !Number.isFinite(total) || total <= 0) {
+        if (loop.stage !== 'normal') {
+          this.adjustEffectLoopGain(loop, loop.defaultGain || 0.05);
+          loop.stage = 'normal';
+        }
+        continue;
+      }
+
+      const ratio = Math.max(0, Math.min(1, remaining / total));
+      let nextStage = 'normal';
+      if (ratio <= 0.15) {
+        nextStage = 'critical';
+      } else if (ratio <= 0.35) {
+        nextStage = 'warning';
+      }
+
+      if (loop.stage === nextStage) continue;
+
+      if (nextStage === 'normal') {
+        this.adjustEffectLoopGain(loop, loop.defaultGain || 0.05, 0.24);
+      } else if (nextStage === 'warning') {
+        const ramp = Math.max(0.12, (remaining / TICK_RATE) * 0.5);
+        this.adjustEffectLoopGain(loop, (loop.defaultGain || 0.05) * 0.7, ramp);
+        this.playPowerupWarning(effect, { critical: false });
+      } else if (nextStage === 'critical') {
+        const ramp = Math.max(0.1, (remaining / TICK_RATE) * 0.4);
+        this.adjustEffectLoopGain(loop, Math.max(0.0001, (loop.defaultGain || 0.05) * 0.35), ramp);
+        this.playPowerupWarning(effect, { critical: true });
+      }
+
+      loop.stage = nextStage;
     }
   }
 }

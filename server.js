@@ -845,19 +845,25 @@ class RoomState {
         }
       }
     }
-    player.effects.set(type, POWERUP_EFFECT_TICKS[type] || TICK_RATE * 4);
+    const totalTicks = POWERUP_EFFECT_TICKS[type] || TICK_RATE * 4;
+    player.effects.set(type, { remaining: totalTicks, total: totalTicks });
   }
 
   handleEffectTimers(player) {
-    for (const [effect, ticks] of [...player.effects.entries()]) {
-      const next = ticks - 1;
+    for (const [effect, data] of [...player.effects.entries()]) {
+      const remaining = typeof data === 'object' && data !== null ? data.remaining : data;
+      const total =
+        typeof data === 'object' && data !== null && typeof data.total === 'number'
+          ? data.total
+          : POWERUP_EFFECT_TICKS[effect] || TICK_RATE * 4;
+      const next = (typeof remaining === 'number' ? remaining : 0) - 1;
       if (next <= 0) {
         if (effect === POWERUP_TYPES.SPEED) {
           player.speed = player.baseSpeed;
         }
         player.effects.delete(effect);
       } else {
-        player.effects.set(effect, next);
+        player.effects.set(effect, { remaining: next, total });
       }
     }
   }
@@ -1089,7 +1095,25 @@ class RoomState {
         segments: player.segments,
         score: player.score,
         kills: player.kills,
-        effects: [...player.effects.keys()]
+        effects: [...player.effects.entries()].map(([effect, data]) => ({
+          type: effect,
+          remaining: Math.max(
+            0,
+            Math.round(
+              typeof data === 'object' && data !== null && typeof data.remaining === 'number'
+                ? data.remaining
+                : Number(data) || 0
+            )
+          ),
+          total: Math.max(
+            0,
+            Math.round(
+              typeof data === 'object' && data !== null && typeof data.total === 'number'
+                ? data.total
+                : POWERUP_EFFECT_TICKS[effect] || TICK_RATE * 4
+            )
+          )
+        }))
       })),
       food: this.food,
       powerups: this.powerups,
