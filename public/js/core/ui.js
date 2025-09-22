@@ -73,6 +73,9 @@ export class UIManager {
     this.statsInterval = null;
     this.audioStorageWarning = { load: false, save: false };
     this.accessibilityStorageWarning = { load: false, save: false };
+    this.eventFeedHighlights = new Map();
+    this.eventFeedPulseTimeout = null;
+    this.eventHighlightClearTimeout = null;
   }
 
   init() {
@@ -132,6 +135,65 @@ export class UIManager {
         </li>`
       )
       .join('');
+  }
+
+  cleanupExpiredEventHighlights() {
+    if (!this.eventFeedHighlights?.size) return;
+    const now = Date.now();
+    for (const [id, expiry] of this.eventFeedHighlights.entries()) {
+      if (!Number.isFinite(expiry) || expiry <= now) {
+        this.eventFeedHighlights.delete(id);
+      }
+    }
+  }
+
+  registerEventFeedEvents(events = []) {
+    if (!Array.isArray(events) || !events.length) return;
+    if (!this.eventFeedHighlights) this.eventFeedHighlights = new Map();
+    this.cleanupExpiredEventHighlights();
+    const now = Date.now();
+    const expireAt = now + 1600;
+    events.forEach((event, index) => {
+      if (!event) return;
+      const rawId = event.id ?? `${now}-${index}-${Math.random().toString(16).slice(2)}`;
+      const id = String(rawId);
+      this.eventFeedHighlights.set(id, expireAt);
+    });
+    if (this.elements.eventFeed) {
+      this.elements.eventFeed.classList.add('event-feed--pulse');
+      if (this.eventFeedPulseTimeout) {
+        window.clearTimeout(this.eventFeedPulseTimeout);
+      }
+      this.eventFeedPulseTimeout = window.setTimeout(() => {
+        this.elements.eventFeed.classList.remove('event-feed--pulse');
+        this.eventFeedPulseTimeout = null;
+      }, 520);
+    }
+    if (this.eventHighlightClearTimeout) {
+      window.clearTimeout(this.eventHighlightClearTimeout);
+    }
+    this.eventHighlightClearTimeout = window.setTimeout(() => {
+      this.eventFeedHighlights.clear();
+      this.eventHighlightClearTimeout = null;
+    }, 2000);
+  }
+
+  shouldHighlightEvent(event) {
+    if (!event) return false;
+    if (!this.eventFeedHighlights?.size) return false;
+    const id = event.id != null ? String(event.id) : null;
+    if (!id) return false;
+    const expiry = this.eventFeedHighlights.get(id);
+    if (!Number.isFinite(expiry)) {
+      this.eventFeedHighlights.delete(id);
+      return false;
+    }
+    const now = Date.now();
+    if (expiry <= now) {
+      this.eventFeedHighlights.delete(id);
+      return false;
+    }
+    return true;
   }
 
   populateModeOptions() {
@@ -778,6 +840,7 @@ export class UIManager {
 
   renderEventFeed() {
     if (!this.elements.eventFeed) return;
+    this.cleanupExpiredEventHighlights();
     const events = Array.isArray(this.state.game?.events) ? this.state.game.events : [];
     if (!events.length) {
       this.elements.eventFeed.innerHTML = '<li class="empty">전투 이벤트를 기다리는 중...</li>';
@@ -794,8 +857,10 @@ export class UIManager {
         const accent = event.accent || '#40a9ff';
         const classes = ['event-feed__item'];
         if (index === 0) classes.push('event-feed__item--recent');
+        if (this.shouldHighlightEvent(event)) classes.push('event-feed__item--flash');
+        classes.push(`event-feed__item--type-${type}`);
         return `
-        <li class="${classes.join(' ')}" data-type="${type}" style="--event-accent:${accent}">
+        <li class="${classes.join(' ')}" data-type="${type}" style="--event-accent:${accent}" data-event-id="${event.id ?? ''}">
           <span class="event-feed__icon">${icon}</span>
           <div class="event-feed__content">
             <span class="event-feed__message">${message}</span>

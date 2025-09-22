@@ -263,6 +263,61 @@ export class AudioManager {
     this.blip({ ...preset, bus: 'ui' });
   }
 
+  playEventCue(event = {}, { index = 0, total = 1 } = {}) {
+    if (!this.state.audioEnabled) return;
+    const safeIndex = Number.isFinite(index) ? Math.max(0, index) : 0;
+    const damp = Math.max(0.38, 1 - safeIndex * 0.22);
+    const type = event?.type || 'info';
+    switch (type) {
+      case 'kill': {
+        this.playSequence(
+          [
+            { freq: 760, duration: 0.12, type: 'square', gainValue: 0.26, bus: 'ui' },
+            { freq: 420, duration: 0.22, type: 'sawtooth', gainValue: 0.28, delay: 0.08, bus: 'ui' }
+          ],
+          { intensity: damp, defaultBus: 'ui' }
+        );
+        break;
+      }
+      case 'golden-food': {
+        this.playSequence(
+          [
+            { freq: 880, duration: 0.14, type: 'triangle', gainValue: 0.22, bus: 'ui' },
+            { freq: 1040, duration: 0.18, type: 'sine', gainValue: 0.18, delay: 0.06, bus: 'ui' },
+            { freq: 1320, duration: 0.16, type: 'triangle', gainValue: 0.14, delay: 0.14, bus: 'ui' }
+          ],
+          { intensity: damp, defaultBus: 'ui' }
+        );
+        break;
+      }
+      case 'powerup': {
+        const kind = event?.meta?.powerup;
+        const base = kind === 'shield' ? 640 : kind === 'shrink' ? 520 : 760;
+        this.playSequence(
+          [
+            { freq: base, duration: 0.12, type: 'triangle', gainValue: 0.18, bus: 'ui' },
+            { freq: base + 140, duration: 0.14, type: 'sine', gainValue: 0.16, delay: 0.07, bus: 'ui' }
+          ],
+          { intensity: damp, defaultBus: 'ui' }
+        );
+        break;
+      }
+      case 'round-end': {
+        this.playSequence(
+          [
+            { freq: 600, duration: 0.18, type: 'triangle', gainValue: 0.2, bus: 'ui' },
+            { freq: 460, duration: 0.26, type: 'sawtooth', gainValue: 0.24, delay: 0.1, bus: 'ui' }
+          ],
+          { intensity: damp, defaultBus: 'ui' }
+        );
+        break;
+      }
+      default: {
+        this.blip({ freq: 540, duration: 0.16, type: 'triangle', gainValue: 0.18, bus: 'ui' });
+      }
+    }
+  }
+
   playCountdownTick() {
     this.blip({ freq: 520, duration: 0.12, type: 'triangle', gainValue: 0.18, bus: 'ui' });
   }

@@ -179,6 +179,21 @@ export class NetworkController {
     }
     const prevState = this.state.game;
     const prevPlayers = buildPlayerMap(prevState?.players);
+    let newEventFeedEntries = [];
+    if (prevState && Array.isArray(gameState?.events)) {
+      const previousEvents = Array.isArray(prevState.events) ? prevState.events : [];
+      const previousIds = new Set(
+        previousEvents
+          .map((event) => (event?.id != null ? String(event.id) : null))
+          .filter((id) => typeof id === 'string' && id.length)
+      );
+      newEventFeedEntries = gameState.events.filter((event) => {
+        if (!event || event.id == null) return false;
+        const id = String(event.id);
+        if (!id.length) return false;
+        return !previousIds.has(id);
+      });
+    }
 
     this.state.game = gameState;
     const nextPhase = gameState?.phase;
@@ -204,7 +219,15 @@ export class NetworkController {
     }
     this.updateSpectatorState(gameState);
     this.ui.handleGamePhase();
+    if (newEventFeedEntries.length && typeof this.ui?.registerEventFeedEvents === 'function') {
+      this.ui.registerEventFeedEvents(newEventFeedEntries);
+    }
     this.ui.updateHud();
+    if (newEventFeedEntries.length && typeof this.audio?.playEventCue === 'function') {
+      newEventFeedEntries.forEach((event, index) => {
+        this.audio.playEventCue(event, { index, total: newEventFeedEntries.length });
+      });
+    }
 
     if (prevState && gameState.round !== prevState.round && gameState.phase === 'running') {
       const favorites = this.state.highlights?.favorites || [];
