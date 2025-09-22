@@ -105,6 +105,12 @@
             <canvas id="game-canvas" width="1600" height="900"></canvas>
             <div class="game-overlay hidden" id="game-overlay"></div>
             <div class="countdown" id="countdown"></div>
+            <div class="mobile-controls" id="mobile-controls">
+              <div class="mobile-stick" id="mobile-stick">
+                <div class="mobile-stick__handle" id="mobile-stick-handle"></div>
+              </div>
+              <p class="mobile-controls__hint">드래그하여 이동하세요</p>
+            </div>
           </div>
           <div class="hud">
             <div class="hud__section">
@@ -206,6 +212,6 @@
     </div>
 
     <script src="/socket.io/socket.io.js"></script>
-    <script type="module" src="/js/main.js"></script>
+    <script type="module" src="/js/app.js"></script>
   </body>
 </html>
