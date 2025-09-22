@@ -87,6 +87,9 @@ export class NetworkController {
     });
 
     this.socket.on('game:ended', ({ winnerId, leaderboard, tournament, highlights, achievements }) => {
+      if (typeof this.audio?.playMatchEnd === 'function') {
+        this.audio.playMatchEnd();
+      }
       this.ui.elements.replayButton.disabled = false;
       const winner = leaderboard?.find((item) => item.id === winnerId);
       if (tournament?.championId) {
@@ -132,8 +135,13 @@ export class NetworkController {
       this.ui.renderChat();
     });
 
-    this.socket.on('room:notification', (note) => {
-      this.ui.notify(note.message, note.type || 'info');
+    this.socket.on('room:notification', (note = {}) => {
+      const type = note.type || 'info';
+      this.ui.notify(note.message, type);
+      if (typeof this.audio?.playNotification === 'function') {
+        const normalized = type === 'warning' ? 'warn' : type;
+        this.audio.playNotification(normalized);
+      }
     });
 
     this.socket.on('room:replay', ({ frames }) => {
@@ -163,6 +171,27 @@ export class NetworkController {
     const prevPlayers = buildPlayerMap(prevState?.players);
 
     this.state.game = gameState;
+    const nextPhase = gameState?.phase;
+    const prevPhase = prevState?.phase;
+    const audio = this.audio;
+    if (audio) {
+      if (nextPhase === 'countdown' && typeof audio.playCountdownTick === 'function') {
+        const previousCountdown = typeof prevState?.countdown === 'number' ? prevState.countdown : null;
+        const currentCountdown = typeof gameState?.countdown === 'number' ? gameState.countdown : null;
+        const enteringCountdown = prevPhase !== 'countdown';
+        const countdownDecreased =
+          prevPhase === 'countdown' &&
+          previousCountdown !== null &&
+          currentCountdown !== null &&
+          currentCountdown < previousCountdown;
+        if (currentCountdown !== null && currentCountdown > 0 && (enteringCountdown || countdownDecreased)) {
+          audio.playCountdownTick();
+        }
+      }
+      if (nextPhase === 'running' && prevPhase !== 'running' && typeof audio.playMatchStart === 'function') {
+        audio.playMatchStart();
+      }
+    }
     this.updateSpectatorState(gameState);
     this.ui.handleGamePhase();
     this.ui.updateHud();

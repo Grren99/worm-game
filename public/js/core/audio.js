@@ -61,17 +61,44 @@ export class AudioManager {
     this.bgm = osc;
   }
 
-  blip({ freq = 440, duration = 0.18, type = 'sine', gainValue = 0.18 } = {}) {
+  blip({ freq = 440, duration = 0.18, type = 'sine', gainValue = 0.18, delay = 0 } = {}) {
     if (!this.state.audioEnabled || !this.context) return;
+    const startTime = this.context.currentTime + Math.max(0, delay);
     const osc = this.context.createOscillator();
     const gain = this.context.createGain();
     osc.type = type;
-    osc.frequency.value = freq;
-    gain.gain.setValueAtTime(gainValue, this.context.currentTime);
-    gain.gain.exponentialRampToValueAtTime(0.0001, this.context.currentTime + duration);
+    osc.frequency.setValueAtTime(freq, startTime);
+    gain.gain.setValueAtTime(gainValue, startTime);
+    gain.gain.exponentialRampToValueAtTime(0.0001, startTime + duration);
     osc.connect(gain).connect(this.master);
-    osc.start();
-    osc.stop(this.context.currentTime + duration + 0.05);
+    osc.start(startTime);
+    osc.stop(startTime + duration + 0.05);
+  }
+
+  playNotification(type = 'info') {
+    const presets = {
+      join: { freq: 560, duration: 0.16, type: 'square', gainValue: 0.18 },
+      success: { freq: 720, duration: 0.2, type: 'triangle', gainValue: 0.2 },
+      warn: { freq: 360, duration: 0.22, type: 'sawtooth', gainValue: 0.22 },
+      error: { freq: 280, duration: 0.26, type: 'sawtooth', gainValue: 0.24 },
+      info: { freq: 480, duration: 0.18, type: 'sine', gainValue: 0.17 }
+    };
+    const preset = presets[type] || presets.info;
+    this.blip(preset);
+  }
+
+  playCountdownTick() {
+    this.blip({ freq: 520, duration: 0.12, type: 'triangle', gainValue: 0.18 });
+  }
+
+  playMatchStart() {
+    this.blip({ freq: 640, duration: 0.14, type: 'square', gainValue: 0.22 });
+    this.blip({ freq: 880, duration: 0.18, type: 'square', gainValue: 0.19, delay: 0.09 });
+  }
+
+  playMatchEnd() {
+    this.blip({ freq: 420, duration: 0.22, type: 'triangle', gainValue: 0.21 });
+    this.blip({ freq: 300, duration: 0.26, type: 'sine', gainValue: 0.18, delay: 0.12 });
   }
 
   playFood() {
