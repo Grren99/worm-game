@@ -486,6 +486,9 @@ class RoomState {
     this.frameHistory = [];
     this.round = 0;
     this.loop = null;
+    this.pendingHighlights = [];
+    this.roundHighlights = [];
+    this.roundStats = new Map();
     this.tournament = this.mode.tournament
       ? {
           roundsToWin: this.mode.tournament.roundsToWin,
@@ -494,6 +497,41 @@ class RoomState {
           championId: null
         }
       : null;
+  }
+
+  ensureRoundStat(player) {
+    if (!player) return null;
+    let entry = this.roundStats.get(player.id);
+    if (!entry) {
+      entry = {
+        playerId: player.id,
+        name: player.name,
+        color: player.color,
+        kills: 0,
+        deaths: 0,
+        golden: 0,
+        powerups: 0,
+        food: 0
+      };
+      this.roundStats.set(player.id, entry);
+    }
+    entry.name = player.name;
+    entry.color = player.color;
+    return entry;
+  }
+
+  queueHighlight(event) {
+    const entry = {
+      id: uuidv4(),
+      timestamp: Date.now(),
+      round: this.round,
+      ...event
+    };
+    this.pendingHighlights.push(entry);
+    if (this.pendingHighlights.length > 12) {
+      this.pendingHighlights = this.pendingHighlights.slice(-12);
+    }
+    return entry;
   }
 
   assignColor(preferredColor) {
@@ -623,6 +661,9 @@ class RoomState {
     this.phase = 'running';
     this.round += 1;
     this.frameHistory = [];
+    this.pendingHighlights = [];
+    this.roundHighlights = [];
+    this.roundStats = new Map();
     for (const player of this.players.values()) {
       player.reset({ baseSpeed: this.settings.baseSpeed });
     }
@@ -688,12 +729,26 @@ class RoomState {
   handleFoodAndPowerups(player) {
     if (!player.alive) return;
     const head = player.segments[0];
+    const stats = this.ensureRoundStat(player);
     for (let i = this.food.length - 1; i >= 0; i -= 1) {
       const meal = this.food[i];
       if (distance(head, meal) < SEGMENT_SIZE) {
         player.score += FOOD_SCORES[meal.type];
+        if (stats) {
+          stats.food = (stats.food || 0) + 1;
+        }
         player.growth += meal.type === FOOD_TYPES.GOLDEN ? 6 : 3;
         if (meal.type === FOOD_TYPES.GOLDEN) {
+          if (stats) {
+            stats.golden = (stats.golden || 0) + 1;
+          }
+          this.queueHighlight({
+            type: 'golden-food',
+            playerId: player.id,
+            playerName: player.name,
+            playerColor: player.color,
+            score: player.score
+          });
           player.speed = player.baseSpeed + 1;
         }
         this.food.splice(i, 1);
@@ -720,6 +775,18 @@ class RoomState {
   }
 
   applyPowerup(player, type) {
+    const stats = this.ensureRoundStat(player);
+    if (stats) {
+      stats.powerups = (stats.powerups || 0) + 1;
+    }
+    this.queueHighlight({
+      type: 'powerup',
+      powerup: type,
+      playerId: player.id,
+      playerName: player.name,
+      playerColor: player.color,
+      score: player.score
+    });
     if (type === POWERUP_TYPES.SHRINK) {
       const removeCount = Math.floor(player.segments.length * 0.25);
       for (let i = 0; i < removeCount; i += 1) {
@@ -833,13 +900,32 @@ class RoomState {
     player.alive = false;
     player.deathCause = cause;
     player.deathTick = Date.now();
+    const victimStats = this.ensureRoundStat(player);
+    if (victimStats) {
+      victimStats.deaths = (victimStats.deaths || 0) + 1;
+    }
+    let killer = null;
     if (killerId && killerId !== player.id) {
-      const killer = this.players.get(killerId);
+      killer = this.players.get(killerId);
       if (killer) {
         killer.score += 100;
         killer.kills += 1;
+        const killerStats = this.ensureRoundStat(killer);
+        if (killerStats) {
+          killerStats.kills = (killerStats.kills || 0) + 1;
+        }
       }
     }
+    this.queueHighlight({
+      type: 'kill',
+      killerId: killer?.id || null,
+      killerName: killer?.name || null,
+      killerColor: killer?.color || null,
+      victimId: player.id,
+      victimName: player.name,
+      victimColor: player.color,
+      cause
+    });
     if (player.lastTail) {
       this.food.push({
         id: uuidv4(),
@@ -870,6 +956,11 @@ class RoomState {
           timestamp: Date.now()
         });
       }
+      this.queueHighlight({
+        type: 'round-end',
+        winnerId: winner?.id || null,
+        winnerName: winner?.name || null
+      });
       for (const player of this.players.values()) {
         const isWinner = winner ? winner.id === player.id : false;
         const isChampion = this.tournament?.championId === player.id;
@@ -878,7 +969,8 @@ class RoomState {
       this.broadcast('game:ended', {
         winnerId: winner?.id || null,
         leaderboard: this.buildLeaderboard(),
-        tournament: this.serializeTournament()
+        tournament: this.serializeTournament(),
+        highlights: this.buildHighlightPackage({ winner })
       });
       if (this.tournament && !this.tournament.championId && this.players.size >= 2) {
         this.phase = 'intermission';
@@ -964,6 +1056,136 @@ class RoomState {
       .sort((a, b) => b.score - a.score);
   }
 
+  buildRoundStatsSnapshot() {
+    const snapshot = [];
+    for (const player of this.players.values()) {
+      const stats = this.roundStats.get(player.id) || {};
+      snapshot.push({
+        playerId: player.id,
+        name: player.name,
+        color: player.color,
+        score: player.score,
+        kills: player.kills,
+        deaths: stats.deaths || 0,
+        golden: stats.golden || 0,
+        powerups: stats.powerups || 0,
+        food: stats.food || 0,
+        survivalSeconds: Math.round(player.survivalTicks / TICK_RATE)
+      });
+    }
+    return snapshot;
+  }
+
+  describeHighlight(event) {
+    switch (event.type) {
+      case 'kill': {
+        if (event.killerName) {
+          return {
+            title: `${event.killerName}의 결정타`,
+            subtitle: `${event.killerName} ▶ ${event.victimName} (${event.cause === 'collision' ? '충돌 승' : '환경 탈락'})`
+          };
+        }
+        return {
+          title: `${event.victimName} 탈락`,
+          subtitle: event.cause === 'wall' ? '벽과 충돌' : '자기 몸에 부딪힘'
+        };
+      }
+      case 'golden-food':
+        return {
+          title: `${event.playerName} 골든 음식 획득`,
+          subtitle: '대량 성장 & 추가 점수 확보'
+        };
+      case 'powerup': {
+        const label = POWERUP_TYPES.SHIELD === event.powerup ? '무적' : POWERUP_TYPES.SPEED === event.powerup ? '속도' : '축소';
+        return {
+          title: `${event.playerName} ${label} 파워업`,
+          subtitle: '상황을 뒤집을 준비 완료'
+        };
+      }
+      case 'round-end':
+        return {
+          title: `${event.winnerName ? `${event.winnerName} 승리` : '라운드 종료'}`,
+          subtitle: event.winnerName ? '토너먼트 포인트 획득!' : '생존자가 없습니다'
+        };
+      default:
+        return {
+          title: '하이라이트',
+          subtitle: ''
+        };
+    }
+  }
+
+  buildRoundSummary(stats, winner) {
+    if (!stats.length) {
+      return {
+        winnerId: winner?.id || null,
+        winnerName: winner?.name || null,
+        round: this.round
+      };
+    }
+    const byKills = [...stats].sort((a, b) => {
+      if (b.kills !== a.kills) return b.kills - a.kills;
+      return b.score - a.score;
+    });
+    const byGolden = [...stats].sort((a, b) => {
+      if ((b.golden || 0) !== (a.golden || 0)) return (b.golden || 0) - (a.golden || 0);
+      return b.score - a.score;
+    });
+    const bySurvival = [...stats].sort((a, b) => b.survivalSeconds - a.survivalSeconds);
+    return {
+      winnerId: winner?.id || null,
+      winnerName: winner?.name || null,
+      round: this.round,
+      topKiller: byKills[0]?.kills ? byKills[0] : null,
+      goldenCollector: byGolden[0]?.golden ? byGolden[0] : null,
+      survivor: bySurvival[0] || null
+    };
+  }
+
+  buildHighlightPackage({ winner } = {}) {
+    const stats = this.buildRoundStatsSnapshot();
+    const sortedEvents = [...this.roundHighlights].sort((a, b) => a.timestamp - b.timestamp);
+    const selectedEvents = [...sortedEvents];
+    while (selectedEvents.length > 5) {
+      const removableIndex = selectedEvents.findIndex((event) => event.type !== 'kill');
+      if (removableIndex > -1) {
+        selectedEvents.splice(removableIndex, 1);
+      } else {
+        selectedEvents.shift();
+      }
+    }
+    const lastFrameIndex = this.frameHistory.length ? this.frameHistory.length - 1 : 0;
+    const clips = selectedEvents.map((event) => {
+      const windowFrames = Math.round(TICK_RATE * 2);
+      const startFrame = Math.max(0, (event.frameIndex || 0) - windowFrames);
+      const endFrame = Math.min(lastFrameIndex, (event.frameIndex || 0) + windowFrames);
+      const frames = this.frameHistory.slice(startFrame, endFrame + 1);
+      const { title, subtitle } = this.describeHighlight(event);
+      return {
+        id: event.id,
+        type: event.type,
+        title,
+        subtitle,
+        startFrame,
+        endFrame,
+        timestamp: event.timestamp,
+        round: event.round,
+        meta: {
+          killerId: event.killerId || null,
+          victimId: event.victimId || null,
+          powerup: event.powerup || null,
+          playerId: event.playerId || null
+        },
+        frames
+      };
+    });
+    return {
+      clips,
+      stats,
+      summary: this.buildRoundSummary(stats, winner)
+    };
+  }
+
   pushFrame(state) {
     const snapshot = {
       timestamp: state.timestamp,
@@ -981,6 +1203,18 @@ class RoomState {
     const maxFrames = TICK_RATE * 120;
     if (this.frameHistory.length > maxFrames) {
       this.frameHistory.shift();
+    }
+    if (this.pendingHighlights.length) {
+      const frameIndex = Math.max(0, this.frameHistory.length - 1);
+      for (const event of this.pendingHighlights) {
+        event.frameIndex = frameIndex;
+        this.roundHighlights.push(event);
+      }
+      this.pendingHighlights = [];
+      const maxHighlights = 24;
+      if (this.roundHighlights.length > maxHighlights) {
+        this.roundHighlights.splice(0, this.roundHighlights.length - maxHighlights);
+      }
     }
   }
 

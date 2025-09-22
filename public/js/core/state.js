@@ -58,6 +58,11 @@ export const initialState = () => ({
     speed: 1,
     lastUpdate: 0
   },
+  highlights: {
+    clips: [],
+    summary: null,
+    stats: []
+  },
   audioEnabled: false,
   audioReady: false,
   preferences: {

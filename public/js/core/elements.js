@@ -36,6 +36,8 @@ export const elements = {
   tournamentWins: document.getElementById('tournament-wins'),
   tournamentRounds: document.getElementById('tournament-rounds'),
   tournamentTimer: document.getElementById('tournament-timer'),
+  highlightSummary: document.getElementById('highlight-summary'),
+  highlightList: document.getElementById('tournament-highlights'),
   modeIndicator: document.getElementById('mode-indicator'),
   worldInfo: document.getElementById('world-info'),
   overlay: document.getElementById('game-overlay'),

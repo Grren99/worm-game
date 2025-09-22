@@ -57,6 +57,8 @@ export class NetworkController {
       this.ui.elements.worldInfo.textContent = `맵: ${world.width} x ${world.height}`;
       this.ui.elements.replayButton.disabled = true;
       this.ui.notify(`플레이어 ID가 부여되었습니다 (${playerId.slice(0, 6)})`);
+      this.state.highlights = { clips: [], summary: null, stats: [] };
+      this.ui.renderHighlights();
       if (this.state.audioEnabled) this.audio.playBgm();
     });
 
@@ -69,7 +71,7 @@ export class NetworkController {
       this.handleGameState(gameState);
     });
 
-    this.socket.on('game:ended', ({ winnerId, leaderboard, tournament }) => {
+    this.socket.on('game:ended', ({ winnerId, leaderboard, tournament, highlights }) => {
       this.ui.elements.replayButton.disabled = false;
       const winner = leaderboard?.find((item) => item.id === winnerId);
       if (tournament?.championId) {
@@ -84,6 +86,16 @@ export class NetworkController {
       } else {
         this.ui.notify('게임이 종료되었습니다.', 'info');
       }
+      if (highlights) {
+        this.state.highlights = {
+          clips: Array.isArray(highlights.clips) ? highlights.clips : [],
+          summary: highlights.summary || null,
+          stats: Array.isArray(highlights.stats) ? highlights.stats : []
+        };
+      } else {
+        this.state.highlights = { clips: [], summary: null, stats: [] };
+      }
+      this.ui.renderHighlights();
     });
 
     this.socket.on('chat:message', (message) => {
@@ -125,6 +137,11 @@ export class NetworkController {
     this.state.game = gameState;
     this.ui.handleGamePhase();
     this.ui.updateHud();
+
+    if (prevState && gameState.round !== prevState.round && gameState.phase === 'running') {
+      this.state.highlights = { clips: [], summary: null, stats: [] };
+      this.ui.renderHighlights();
+    }
 
     if (this.state.playerId) {
       const me = gameState.players?.find((p) => p.id === this.state.playerId);

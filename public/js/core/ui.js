@@ -30,6 +30,7 @@ export class UIManager {
     this.renderColorPalette();
     this.updateModeIndicator();
     this.attachEventListeners();
+    this.renderHighlights();
     this.fetchStats();
     this.statsInterval = setInterval(() => this.fetchStats(), 60000);
     this.notify('온라인 지렁이 배틀에 오신 것을 환영합니다!');
@@ -417,6 +418,80 @@ export class UIManager {
       )
       .join('');
     this.elements.chatLog.scrollTop = this.elements.chatLog.scrollHeight;
+  }
+
+  renderHighlights() {
+    if (!this.elements.highlightList || !this.elements.highlightSummary) return;
+    const data = this.state.highlights || {};
+    const clips = Array.isArray(data.clips) ? data.clips : [];
+    const summary = data.summary || null;
+
+    if (!summary) {
+      this.elements.highlightSummary.textContent = '하이라이트 데이터를 기다리는 중...';
+    } else {
+      const lines = [];
+      if (summary.winnerName) {
+        lines.push(`우승: ${summary.winnerName}`);
+      }
+      if (summary.topKiller) {
+        lines.push(`최다 킬: ${summary.topKiller.name} ${summary.topKiller.kills}회`);
+      }
+      if (summary.goldenCollector) {
+        lines.push(`골든 수집: ${summary.goldenCollector.name} ${summary.goldenCollector.golden}개`);
+      }
+      if (summary.survivor) {
+        lines.push(`생존: ${summary.survivor.name} ${summary.survivor.survivalSeconds}s`);
+      }
+      this.elements.highlightSummary.textContent = lines.length
+        ? lines.join(' · ')
+        : '이번 라운드에서 특이사항이 없습니다.';
+    }
+
+    if (!clips.length) {
+      this.elements.highlightList.innerHTML = '<li class="empty">하이라이트가 준비되면 여기에 표시됩니다.</li>';
+      return;
+    }
+
+    this.elements.highlightList.innerHTML = clips
+      .map(
+        (clip, index) => `
+        <li>
+          <button type="button" data-highlight="${index}">
+            <span class="title">${clip.title || '하이라이트'}</span>
+            <span class="subtitle">${clip.subtitle || ''}</span>
+          </button>
+        </li>`
+      )
+      .join('');
+    this.elements.highlightList.querySelectorAll('button[data-highlight]').forEach((button) => {
+      button.addEventListener('click', () => {
+        const index = Number.parseInt(button.dataset.highlight, 10);
+        this.playHighlightClip(Number.isNaN(index) ? -1 : index);
+      });
+    });
+  }
+
+  playHighlightClip(index) {
+    const clips = this.state.highlights?.clips || [];
+    const clip = clips[index];
+    if (!clip || !Array.isArray(clip.frames) || !clip.frames.length) {
+      this.notify('하이라이트 데이터를 불러올 수 없습니다.', 'warn');
+      return;
+    }
+    this.state.replay.frames = clip.frames;
+    this.state.replay.index = 0;
+    this.state.replay.playing = true;
+    this.state.replay.speed = 1;
+    this.state.replay.lastUpdate = performance.now();
+    if (this.elements.replaySpeed) {
+      this.elements.replaySpeed.value = this.state.replay.speed;
+    }
+    if (this.elements.replayProgress) {
+      this.elements.replayProgress.max = Math.max(1, clip.frames.length - 1);
+      this.elements.replayProgress.value = 0;
+    }
+    this.elements.replayModal.classList.remove('hidden');
+    this.notify(`${clip.title || '하이라이트'} 재생을 시작합니다.`);
   }
 
   handleChatSubmit(event) {
