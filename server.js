@@ -44,6 +44,12 @@ const POWERUP_LABELS = {
   [POWERUP_TYPES.SHRINK]: '작아지기'
 };
 
+const POWERUP_ICONS = {
+  [POWERUP_TYPES.SPEED]: '⚡',
+  [POWERUP_TYPES.SHIELD]: '🛡',
+  [POWERUP_TYPES.SHRINK]: '🌀'
+};
+
 const FOOD_TYPES = {
   BASIC: 'basic',
   GOLDEN: 'golden'
@@ -1434,6 +1440,63 @@ class RoomState {
     };
   }
 
+  resolveMarkerIcon(event) {
+    switch (event.type) {
+      case 'kill':
+        return '⚔️';
+      case 'golden-food':
+        return '✨';
+      case 'powerup':
+        return POWERUP_ICONS[event.powerup] || '🔋';
+      case 'round-end':
+        return '🏁';
+      default:
+        return '';
+    }
+  }
+
+  resolveMarkerAccent(event) {
+    switch (event.type) {
+      case 'kill':
+        return event.killerColor || event.victimColor || '#ff4d4f';
+      case 'golden-food':
+        return event.playerColor || '#f5b301';
+      case 'powerup':
+        return event.playerColor || '#13c2c2';
+      case 'round-end':
+        return event.winnerColor || '#9254de';
+      default:
+        return '#faad14';
+    }
+  }
+
+  buildReplayMarkers() {
+    if (!Array.isArray(this.roundHighlights) || !this.roundHighlights.length) {
+      return [];
+    }
+    const markers = [];
+    for (const event of this.roundHighlights) {
+      if (!event || !Number.isFinite(event.frameIndex)) continue;
+      const descriptor = this.describeHighlight(event) || { title: '이벤트', subtitle: '' };
+      const feedEntry = this.buildEventFeedEntry(event);
+      const marker = {
+        id: event.id,
+        frameIndex: Math.max(0, Math.round(event.frameIndex)),
+        type: event.type || 'event',
+        title: descriptor.title || '이벤트',
+        subtitle: descriptor.subtitle || '',
+        icon: this.resolveMarkerIcon(event),
+        accent: feedEntry?.accent || this.resolveMarkerAccent(event),
+        timestamp: event.timestamp || Date.now(),
+        round: Number.isFinite(event.round) ? event.round : this.round,
+        powerup: event.powerup || feedEntry?.meta?.powerup || null
+      };
+      markers.push(marker);
+    }
+    markers.sort((a, b) => a.frameIndex - b.frameIndex);
+    return markers;
+  }
+
   deriveHighlightTags(event) {
     const tags = new Set(['highlight']);
     switch (event.type) {
@@ -1639,7 +1702,8 @@ io.on('connection', (socket) => {
     socket.emit('room:replay', {
       roomId,
       frames: room.frameHistory,
-      world: { width: WORLD_WIDTH, height: WORLD_HEIGHT }
+      markers: room.buildReplayMarkers(),
+      world: { width: WORLD_WIDTH, height: WORLD_HEIGHT, segmentSize: SEGMENT_SIZE }
     });
   });
 

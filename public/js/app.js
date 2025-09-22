@@ -12,7 +12,7 @@ const socket = io({ transports: ['websocket'] });
 const audio = new AudioManager(state);
 const highlightLibrary = new HighlightLibrary();
 const ui = new UIManager({ state, elements, socket, audio, highlightLibrary });
-const renderer = new Renderer({ state, elements });
+const renderer = new Renderer({ state, elements, ui });
 const input = new InputManager({ state, socket, elements, ui });
 const network = new NetworkController({ state, socket, ui, audio, renderer });
 

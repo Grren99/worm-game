@@ -1747,6 +1747,86 @@ body.hud-high-contrast.hud-colorblind #player-effects li::after {
   flex-wrap: wrap;
 }
 
+.replay-timeline {
+  position: relative;
+  flex: 1 1 280px;
+  min-width: 220px;
+  padding: 12px 0 18px;
+}
+
+.replay-timeline input[type='range'] {
+  position: relative;
+  z-index: 2;
+  width: 100%;
+  background: transparent;
+}
+
+.replay-timeline__markers {
+  position: absolute;
+  inset: 0;
+  z-index: 3;
+  pointer-events: none;
+}
+
+.replay-timeline__markers::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 50%;
+  height: 4px;
+  transform: translateY(-50%);
+  border-radius: 999px;
+  background: linear-gradient(90deg, rgba(255, 255, 255, 0.08), rgba(255, 255, 255, 0.02));
+}
+
+.replay-marker {
+  pointer-events: auto;
+  position: absolute;
+  top: 50%;
+  transform: translate(-50%, -50%);
+  padding: 0;
+  border: none;
+  background: none;
+  cursor: pointer;
+  transition: transform 0.12s ease;
+}
+
+.replay-marker__dot {
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  background: var(--marker-color, #faad14);
+  box-shadow: 0 0 0 2px rgba(10, 12, 18, 0.85), 0 0 10px rgba(0, 0, 0, 0.4);
+  display: block;
+  transition: transform 0.12s ease, box-shadow 0.12s ease;
+}
+
+.replay-marker.is-active .replay-marker__dot {
+  transform: scale(1.3);
+  box-shadow: 0 0 0 2px rgba(10, 12, 18, 0.85), 0 0 14px rgba(255, 255, 255, 0.6);
+}
+
+.replay-marker--kill .replay-marker__dot {
+  background: #ff4d4f;
+}
+
+.replay-marker--golden-food .replay-marker__dot {
+  background: #f5b301;
+}
+
+.replay-marker--powerup .replay-marker__dot {
+  background: #13c2c2;
+}
+
+.replay-marker--round-end .replay-marker__dot {
+  background: #9254de;
+}
+
+.replay-marker--default .replay-marker__dot {
+  background: #faad14;
+}
+
 @media (max-width: 1400px) {
   .app {
     width: 100%;

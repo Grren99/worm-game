@@ -88,6 +88,7 @@ export class UIManager {
     this.restoreHighlightFavorites();
     this.renderHighlights();
     this.renderAchievements();
+    this.renderReplayMarkers();
     this.fetchStats();
     this.statsInterval = setInterval(() => this.fetchStats(), 60000);
     this.notify('온라인 지렁이 배틀에 오신 것을 환영합니다!');
@@ -1698,7 +1699,10 @@ export class UIManager {
       return;
     }
     this.state.replay.frames = clip.frames;
+    this.state.replay.markers = [];
+    this.state.replay.duration = Math.max(0, clip.frames.length - 1);
     this.state.replay.index = 0;
+    this.state.replay.activeMarkerId = null;
     this.state.replay.playing = true;
     this.state.replay.speed = 1;
     this.state.replay.lastUpdate = performance.now();
@@ -1706,9 +1710,11 @@ export class UIManager {
       this.elements.replaySpeed.value = this.state.replay.speed;
     }
     if (this.elements.replayProgress) {
-      this.elements.replayProgress.max = Math.max(1, clip.frames.length - 1);
+      this.elements.replayProgress.max = Math.max(1, this.state.replay.duration);
       this.elements.replayProgress.value = 0;
     }
+    this.renderReplayMarkers();
+    this.updateActiveReplayMarker(0);
     this.elements.replayModal.classList.remove('hidden');
     this.notify(`${clip.title || '하이라이트'} 재생을 시작합니다.`);
   }
@@ -1725,16 +1731,37 @@ export class UIManager {
     this.elements.chatInput.value = '';
   }
 
-  openReplayModal(frames) {
-    if (!frames?.length) {
+  openReplayModal(payload) {
+    const frames = Array.isArray(payload?.frames) ? payload.frames : [];
+    const markers = Array.isArray(payload?.markers) ? payload.markers : [];
+    if (!frames.length) {
       this.notify('리플레이 데이터가 없습니다.', 'warn');
       return;
     }
+    const normalizedMarkers = markers
+      .filter((marker) => Number.isFinite(marker?.frameIndex) && typeof marker?.id === 'string')
+      .map((marker) => ({
+        ...marker,
+        frameIndex: Math.max(0, Math.round(marker.frameIndex))
+      }))
+      .sort((a, b) => a.frameIndex - b.frameIndex);
     this.state.replay.frames = frames;
+    this.state.replay.markers = normalizedMarkers;
+    this.state.replay.duration = Math.max(0, frames.length - 1);
     this.state.replay.index = 0;
+    this.state.replay.activeMarkerId = null;
     this.state.replay.playing = false;
-    this.elements.replayProgress.max = Math.max(1, frames.length - 1);
-    this.elements.replayProgress.value = 0;
+    this.state.replay.speed = 1;
+    this.state.replay.lastUpdate = performance.now();
+    if (this.elements.replaySpeed) {
+      this.elements.replaySpeed.value = this.state.replay.speed;
+    }
+    if (this.elements.replayProgress) {
+      this.elements.replayProgress.max = Math.max(1, this.state.replay.duration);
+      this.elements.replayProgress.value = 0;
+    }
+    this.renderReplayMarkers();
+    this.updateActiveReplayMarker(0);
     this.elements.replayModal.classList.remove('hidden');
     this.notify('리플레이 준비 완료');
   }
@@ -1752,6 +1779,107 @@ export class UIManager {
 
   pauseReplay() {
     this.state.replay.playing = false;
+  }
+
+  renderReplayMarkers() {
+    const container = this.elements.replayTimelineMarkers;
+    if (!container) return;
+    const markers = Array.isArray(this.state.replay.markers) ? this.state.replay.markers : [];
+    const frames = this.state.replay.frames.length;
+    const maxFrame = Math.max(1, frames - 1);
+    container.innerHTML = '';
+    const map = new Map();
+    if (!markers.length || maxFrame <= 0) {
+      this.elements.replayMarkerElements = map;
+      this.elements.replayMarkerActiveId = null;
+      return;
+    }
+    const formatSeconds = (frame) => {
+      if (!Number.isFinite(frame)) return null;
+      const seconds = frame / TICK_RATE;
+      if (!Number.isFinite(seconds)) return null;
+      const rounded = Math.round(seconds * 10) / 10;
+      return `${rounded.toFixed(1).replace(/\.0$/, '')}초`;
+    };
+    for (const marker of markers) {
+      const frameIndex = Number(marker.frameIndex);
+      if (!Number.isFinite(frameIndex)) continue;
+      const ratio = Math.min(1, Math.max(0, maxFrame ? frameIndex / maxFrame : 0));
+      const button = document.createElement('button');
+      const typeKey = (marker.type || 'default').toString().toLowerCase().replace(/[^a-z0-9-]/g, '-');
+      button.type = 'button';
+      button.style.left = `${ratio * 100}%`;
+      button.className = `replay-marker replay-marker--${typeKey || 'default'}`;
+      if (marker.accent) {
+        button.style.setProperty('--marker-color', marker.accent);
+      }
+      button.dataset.markerId = marker.id;
+      button.dataset.frameIndex = frameIndex;
+      button.dataset.type = marker.type || 'event';
+      if (marker.powerup) {
+        button.dataset.powerup = marker.powerup;
+      }
+      const dot = document.createElement('span');
+      dot.className = 'replay-marker__dot';
+      if (marker.icon) {
+        dot.textContent = marker.icon;
+      }
+      button.appendChild(dot);
+      const timeLabel = formatSeconds(frameIndex);
+      const parts = [marker.title, marker.subtitle, timeLabel].filter(Boolean);
+      const label = parts.length ? parts.join(' · ') : '이벤트';
+      button.title = label;
+      button.setAttribute('aria-label', label);
+      container.appendChild(button);
+      map.set(marker.id, button);
+    }
+    this.elements.replayMarkerElements = map;
+    this.elements.replayMarkerActiveId = null;
+  }
+
+  setActiveReplayMarker(markerId) {
+    const map = this.elements.replayMarkerElements;
+    if (!(map instanceof Map)) return;
+    const previousId = this.elements.replayMarkerActiveId;
+    if (previousId && map.has(previousId)) {
+      map.get(previousId).classList.remove('is-active');
+    }
+    if (markerId && map.has(markerId)) {
+      map.get(markerId).classList.add('is-active');
+      this.elements.replayMarkerActiveId = markerId;
+    } else {
+      this.elements.replayMarkerActiveId = null;
+    }
+  }
+
+  updateActiveReplayMarker(index) {
+    const markers = Array.isArray(this.state.replay.markers) ? this.state.replay.markers : [];
+    if (!markers.length) {
+      if (this.state.replay.activeMarkerId) {
+        this.state.replay.activeMarkerId = null;
+        this.setActiveReplayMarker(null);
+      }
+      return;
+    }
+    const maxFrame = Math.max(0, this.state.replay.frames.length - 1);
+    const targetIndex = Math.max(0, Math.min(maxFrame, Number(index) || 0));
+    let candidate = null;
+    for (const marker of markers) {
+      const frameIndex = Number(marker.frameIndex);
+      if (!Number.isFinite(frameIndex)) continue;
+      if (frameIndex <= targetIndex) {
+        if (!candidate || frameIndex > candidate.frameIndex) {
+          candidate = marker;
+        }
+      }
+    }
+    if (!candidate) {
+      candidate = markers[0];
+    }
+    const nextId = candidate ? candidate.id : null;
+    if (this.state.replay.activeMarkerId === nextId) return;
+    this.state.replay.activeMarkerId = nextId;
+    this.setActiveReplayMarker(nextId);
   }
 
   attachEventListeners() {
@@ -1887,8 +2015,26 @@ export class UIManager {
 
     if (this.elements.replayProgress) {
       this.elements.replayProgress.addEventListener('input', (event) => {
-        this.state.replay.index = parseInt(event.target.value, 10) || 0;
+        const nextIndex = parseInt(event.target.value, 10);
+        this.state.replay.index = Number.isFinite(nextIndex) ? nextIndex : 0;
         this.state.replay.playing = false;
+        this.updateActiveReplayMarker(this.state.replay.index);
+      });
+    }
+
+    if (this.elements.replayTimelineMarkers) {
+      this.elements.replayTimelineMarkers.addEventListener('click', (event) => {
+        const marker = event.target.closest('button[data-marker-id]');
+        if (!marker) return;
+        event.preventDefault();
+        const frameIndex = parseInt(marker.dataset.frameIndex, 10);
+        if (!Number.isFinite(frameIndex)) return;
+        this.state.replay.index = frameIndex;
+        this.state.replay.playing = false;
+        if (this.elements.replayProgress) {
+          this.elements.replayProgress.value = frameIndex;
+        }
+        this.updateActiveReplayMarker(frameIndex);
       });
     }
 

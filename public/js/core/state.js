@@ -53,6 +53,9 @@ export const initialState = () => ({
   chat: [],
   replay: {
     frames: [],
+    markers: [],
+    activeMarkerId: null,
+    duration: 0,
     playing: false,
     index: 0,
     speed: 1,

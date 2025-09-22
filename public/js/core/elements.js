@@ -8,6 +8,8 @@ export const elements = {
   replayPause: document.getElementById('replay-pause'),
   replaySpeed: document.getElementById('replay-speed'),
   replayProgress: document.getElementById('replay-progress'),
+  replayTimeline: document.getElementById('replay-timeline'),
+  replayTimelineMarkers: document.getElementById('replay-timeline-markers'),
   replayCanvas: document.getElementById('replay-canvas'),
   nameInput: document.getElementById('player-name'),
   colorPalette: document.getElementById('color-palette'),
@@ -82,3 +84,5 @@ elements.canvasContext = elements.canvas?.getContext('2d') || null;
 elements.replayContext = elements.replayCanvas?.getContext('2d') || null;
 
 elements.spectatorCameraContexts = new Map();
+elements.replayMarkerElements = new Map();
+elements.replayMarkerActiveId = null;

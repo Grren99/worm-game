@@ -144,8 +144,16 @@ export class NetworkController {
       }
     });
 
-    this.socket.on('room:replay', ({ frames }) => {
-      this.ui.openReplayModal(frames);
+    this.socket.on('room:replay', ({ frames, markers, world }) => {
+      if (world && typeof world === 'object') {
+        this.state.world = {
+          ...this.state.world,
+          width: Number.isFinite(world.width) ? world.width : this.state.world.width,
+          height: Number.isFinite(world.height) ? world.height : this.state.world.height,
+          segmentSize: Number.isFinite(world.segmentSize) ? world.segmentSize : this.state.world.segmentSize
+        };
+      }
+      this.ui.openReplayModal({ frames, markers });
     });
 
     this.socket.io.on('open', () => {

@@ -7,9 +7,10 @@ const POWERUP_COLORS = {
 };
 
 export class Renderer {
-  constructor({ state, elements }) {
+  constructor({ state, elements, ui = null }) {
     this.state = state;
     this.elements = elements;
+    this.ui = ui;
     this.ctx = elements.canvasContext;
     this.replayCtx = elements.replayContext;
     this.particles = [];
@@ -316,6 +317,9 @@ export class Renderer {
         replay.index = Math.min(replay.frames.length - 1, replay.index + Math.floor(advance));
         replay.lastUpdate = now;
         this.elements.replayProgress.value = replay.index;
+        if (this.ui && typeof this.ui.updateActiveReplayMarker === 'function') {
+          this.ui.updateActiveReplayMarker(replay.index);
+        }
         if (replay.index >= replay.frames.length - 1) {
           replay.playing = false;
         }
@@ -324,5 +328,8 @@ export class Renderer {
 
     const frame = replay.frames[replay.index];
     this.renderScene(this.replayCtx, frame, { fitWorld: true });
+    if (this.ui && typeof this.ui.updateActiveReplayMarker === 'function') {
+      this.ui.updateActiveReplayMarker(replay.index);
+    }
   }
 }
