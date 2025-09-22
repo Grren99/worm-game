@@ -22,11 +22,17 @@
             class="status status--latency"
             id="latency-indicator"
             aria-live="polite"
-          >핑 측정 중...</div>
+          >
+            핑 측정 중...
+          </div>
         </div>
         <div class="header-actions">
-          <button id="toggle-audio" class="btn btn--ghost">🔊 사운드 켜기</button>
-          <button id="request-replay" class="btn btn--ghost" disabled>🎞 리플레이</button>
+          <button id="toggle-audio" class="btn btn--ghost">
+            🔊 사운드 켜기
+          </button>
+          <button id="request-replay" class="btn btn--ghost" disabled>
+            🎞 리플레이
+          </button>
         </div>
       </header>
 
@@ -41,34 +47,88 @@
             <div class="field">
               <span>지렁이 색상</span>
               <div class="color-palette" id="color-palette">
-                <button type="button" data-color="#ff4d4f" aria-label="빨강"></button>
-                <button type="button" data-color="#40a9ff" aria-label="파랑"></button>
-                <button type="button" data-color="#52c41a" aria-label="초록"></button>
-                <button type="button" data-color="#faad14" aria-label="노랑"></button>
-                <button type="button" data-color="#9254de" aria-label="보라"></button>
-                <button type="button" data-color="#fa541c" aria-label="주황"></button>
-                <button type="button" data-color="#eb2f96" aria-label="분홍"></button>
-                <button type="button" data-color="#13c2c2" aria-label="청록"></button>
+                <button
+                  type="button"
+                  data-color="#ff4d4f"
+                  aria-label="빨강"
+                ></button>
+                <button
+                  type="button"
+                  data-color="#40a9ff"
+                  aria-label="파랑"
+                ></button>
+                <button
+                  type="button"
+                  data-color="#52c41a"
+                  aria-label="초록"
+                ></button>
+                <button
+                  type="button"
+                  data-color="#faad14"
+                  aria-label="노랑"
+                ></button>
+                <button
+                  type="button"
+                  data-color="#9254de"
+                  aria-label="보라"
+                ></button>
+                <button
+                  type="button"
+                  data-color="#fa541c"
+                  aria-label="주황"
+                ></button>
+                <button
+                  type="button"
+                  data-color="#eb2f96"
+                  aria-label="분홍"
+                ></button>
+                <button
+                  type="button"
+                  data-color="#13c2c2"
+                  aria-label="청록"
+                ></button>
               </div>
               <div class="color-preview" id="color-preview">선택 색상</div>
             </div>
             <label class="field">
               <span>효과음 볼륨</span>
               <div class="volume-control">
-                <input id="sfx-volume" type="range" min="0" max="100" step="5" />
-                <span class="volume-control__value" id="sfx-volume-value">70%</span>
+                <input
+                  id="sfx-volume"
+                  type="range"
+                  min="0"
+                  max="100"
+                  step="5"
+                />
+                <span class="volume-control__value" id="sfx-volume-value"
+                  >70%</span
+                >
               </div>
-              <small class="field__hint">채팅/시스템 알림음 크기를 조절합니다</small>
+              <small class="field__hint"
+                >채팅/시스템 알림음 크기를 조절합니다</small
+              >
             </label>
             <fieldset class="event-settings" id="event-feed-settings">
               <legend>이벤트 피드 알림</legend>
               <label class="event-settings__volume">
                 <span>이벤트 효과음 볼륨</span>
                 <div class="volume-control">
-                  <input id="event-cue-volume" type="range" min="0" max="100" step="5" />
-                  <span class="volume-control__value" id="event-cue-volume-value">80%</span>
+                  <input
+                    id="event-cue-volume"
+                    type="range"
+                    min="0"
+                    max="100"
+                    step="5"
+                  />
+                  <span
+                    class="volume-control__value"
+                    id="event-cue-volume-value"
+                    >80%</span
+                  >
                 </div>
-                <small class="field__hint">전투 이벤트 효과음의 전반적인 크기를 조절합니다</small>
+                <small class="field__hint"
+                  >전투 이벤트 효과음의 전반적인 크기를 조절합니다</small
+                >
               </label>
               <div class="event-settings__grid">
                 <div class="event-settings__row" data-event-row="kill">
@@ -85,18 +145,30 @@
                 <div class="event-settings__row" data-event-row="golden-food">
                   <span class="event-settings__label">✨ 골든 음식</span>
                   <label class="field__option">
-                    <input type="checkbox" data-event-filter="golden-food" checked />
+                    <input
+                      type="checkbox"
+                      data-event-filter="golden-food"
+                      checked
+                    />
                     <span>피드 표시</span>
                   </label>
                   <label class="field__option">
-                    <input type="checkbox" data-event-sound="golden-food" checked />
+                    <input
+                      type="checkbox"
+                      data-event-sound="golden-food"
+                      checked
+                    />
                     <span>효과음</span>
                   </label>
                 </div>
                 <div class="event-settings__row" data-event-row="powerup">
                   <span class="event-settings__label">🔋 파워업</span>
                   <label class="field__option">
-                    <input type="checkbox" data-event-filter="powerup" checked />
+                    <input
+                      type="checkbox"
+                      data-event-filter="powerup"
+                      checked
+                    />
                     <span>피드 표시</span>
                   </label>
                   <label class="field__option">
@@ -107,16 +179,48 @@
                 <div class="event-settings__row" data-event-row="round-end">
                   <span class="event-settings__label">🏁 라운드 종료</span>
                   <label class="field__option">
-                    <input type="checkbox" data-event-filter="round-end" checked />
+                    <input
+                      type="checkbox"
+                      data-event-filter="round-end"
+                      checked
+                    />
                     <span>피드 표시</span>
                   </label>
                   <label class="field__option">
-                    <input type="checkbox" data-event-sound="round-end" checked />
+                    <input
+                      type="checkbox"
+                      data-event-sound="round-end"
+                      checked
+                    />
                     <span>효과음</span>
                   </label>
                 </div>
               </div>
             </fieldset>
+            <label class="field">
+              <span>게임 모드</span>
+              <select id="game-mode"></select>
+              <small class="field__hint" id="mode-description"></small>
+            </label>
+            <div class="field-row">
+              <button id="quick-join" class="btn btn--primary">
+                빠른 입장
+              </button>
+              <button id="create-room" class="btn btn--secondary">
+                방 만들기
+              </button>
+            </div>
+            <label class="field">
+              <span>방 검색</span>
+              <div class="field-row">
+                <input id="room-id" placeholder="방 코드" />
+                <button id="join-room" class="btn btn--secondary">입장</button>
+              </div>
+            </label>
+            <label class="field">
+              <span>비공개 방</span>
+              <input id="private-room-toggle" type="checkbox" />
+            </label>
             <div class="field field--stacked">
               <span>접근성 옵션</span>
               <label class="field__option">
@@ -127,34 +231,18 @@
                 <input id="accessibility-colorblind" type="checkbox" />
                 <span>색각 보조 패턴 표시</span>
               </label>
-              <small class="field__hint">HUD 대비와 패턴을 조절해 가독성을 높입니다</small>
+              <small class="field__hint"
+                >HUD 대비와 패턴을 조절해 가독성을 높입니다</small
+              >
             </div>
-            <div class="field-row">
-              <button id="quick-join" class="btn btn--primary">빠른 입장</button>
-              <button id="create-room" class="btn btn--secondary">방 만들기</button>
-            </div>
-            <label class="field">
-              <span>게임 모드</span>
-              <select id="game-mode"></select>
-              <small class="field__hint" id="mode-description"></small>
-            </label>
-            <label class="field">
-              <span>비공개 방</span>
-              <input id="private-room-toggle" type="checkbox" />
-            </label>
-            <label class="field">
-              <span>방 검색</span>
-              <div class="field-row">
-                <input id="room-id" placeholder="방 코드" />
-                <button id="join-room" class="btn btn--secondary">입장</button>
-              </div>
-            </label>
           </section>
 
           <section class="panel__section">
             <div class="section-header">
               <h2>공개 방</h2>
-              <button id="refresh-rooms" class="btn btn--ghost">새로고침</button>
+              <button id="refresh-rooms" class="btn btn--ghost">
+                새로고침
+              </button>
             </div>
             <ul id="room-list" class="room-list empty">
               <li>참여 가능한 방이 없습니다.</li>
@@ -177,7 +265,9 @@
               </thead>
               <tbody>
                 <tr>
-                  <td colspan="4" class="empty">통계 데이터를 불러오는 중...</td>
+                  <td colspan="4" class="empty">
+                    통계 데이터를 불러오는 중...
+                  </td>
                 </tr>
               </tbody>
             </table>
@@ -191,7 +281,10 @@
             <div class="countdown" id="countdown"></div>
             <div class="mobile-controls" id="mobile-controls">
               <div class="mobile-stick" id="mobile-stick">
-                <div class="mobile-stick__handle" id="mobile-stick-handle"></div>
+                <div
+                  class="mobile-stick__handle"
+                  id="mobile-stick-handle"
+                ></div>
               </div>
               <p class="mobile-controls__hint">드래그하여 이동하세요</p>
             </div>
@@ -202,13 +295,28 @@
                   <small id="spectator-status">관전 대상 없음</small>
                 </div>
                 <div class="spectator-panel__controls">
-                  <button id="spectator-prev" class="btn btn--ghost btn--tiny" type="button" aria-label="이전 플레이어">
+                  <button
+                    id="spectator-prev"
+                    class="btn btn--ghost btn--tiny"
+                    type="button"
+                    aria-label="이전 플레이어"
+                  >
                     ◀
                   </button>
-                  <button id="spectator-next" class="btn btn--ghost btn--tiny" type="button" aria-label="다음 플레이어">
+                  <button
+                    id="spectator-next"
+                    class="btn btn--ghost btn--tiny"
+                    type="button"
+                    aria-label="다음 플레이어"
+                  >
                     ▶
                   </button>
-                  <button id="spectator-lock" class="btn btn--ghost btn--tiny" type="button" aria-pressed="false">
+                  <button
+                    id="spectator-lock"
+                    class="btn btn--ghost btn--tiny"
+                    type="button"
+                    aria-pressed="false"
+                  >
                     자동 추적
                   </button>
                 </div>
@@ -249,7 +357,10 @@
                 <li class="empty">전투 이벤트가 여기에 표시됩니다.</li>
               </ul>
             </div>
-            <div class="hud__section hud__section--tournament is-hidden" id="tournament-section">
+            <div
+              class="hud__section hud__section--tournament is-hidden"
+              id="tournament-section"
+            >
               <h3>토너먼트</h3>
               <div class="tournament__meta">
                 <span id="tournament-rounds">라운드 -</span>
@@ -261,7 +372,9 @@
                 <div class="tournament__round-summary">
                   <h5>라운드 요약</h5>
                   <ul id="tournament-round-summary" class="round-summary-list">
-                    <li class="empty">라운드 기록이 준비되면 여기에 표시됩니다.</li>
+                    <li class="empty">
+                      라운드 기록이 준비되면 여기에 표시됩니다.
+                    </li>
                   </ul>
                 </div>
                 <div class="highlight-controls">
@@ -274,48 +387,111 @@
                     />
                   </div>
                   <div class="highlight-controls__actions">
-                    <div id="highlight-tag-filters" class="highlight-tag-filters">
-                      <button type="button" data-tag="kill" class="tag-filter" aria-pressed="false">킬</button>
-                      <button type="button" data-tag="powerup" class="tag-filter" aria-pressed="false">파워업</button>
-                      <button type="button" data-tag="golden" class="tag-filter" aria-pressed="false">골든</button>
-                      <button type="button" data-tag="round-end" class="tag-filter" aria-pressed="false">라운드</button>
+                    <div
+                      id="highlight-tag-filters"
+                      class="highlight-tag-filters"
+                    >
+                      <button
+                        type="button"
+                        data-tag="kill"
+                        class="tag-filter"
+                        aria-pressed="false"
+                      >
+                        킬
+                      </button>
+                      <button
+                        type="button"
+                        data-tag="powerup"
+                        class="tag-filter"
+                        aria-pressed="false"
+                      >
+                        파워업
+                      </button>
+                      <button
+                        type="button"
+                        data-tag="golden"
+                        class="tag-filter"
+                        aria-pressed="false"
+                      >
+                        골든
+                      </button>
+                      <button
+                        type="button"
+                        data-tag="round-end"
+                        class="tag-filter"
+                        aria-pressed="false"
+                      >
+                        라운드
+                      </button>
                     </div>
                     <div class="highlight-controls__import">
-                      <input id="highlight-import-input" type="file" accept="application/json" hidden />
-                      <button id="highlight-import-button" type="button" class="btn btn--ghost btn--tiny">
+                      <input
+                        id="highlight-import-input"
+                        type="file"
+                        accept="application/json"
+                        hidden
+                      />
+                      <button
+                        id="highlight-import-button"
+                        type="button"
+                        class="btn btn--ghost btn--tiny"
+                      >
                         JSON 가져오기
                       </button>
                     </div>
                   </div>
                 </div>
-                <div id="highlight-summary" class="highlight-summary">데이터를 기다리는 중...</div>
-                <div class="highlight-recommendations" id="highlight-recommendations">
+                <div id="highlight-summary" class="highlight-summary">
+                  데이터를 기다리는 중...
+                </div>
+                <div
+                  class="highlight-recommendations"
+                  id="highlight-recommendations"
+                >
                   <div class="highlight-recommendations__header">
                     <h5>추천 하이라이트</h5>
                   </div>
-                  <ul id="highlight-recommendation-list" class="highlight-recommendations__list">
+                  <ul
+                    id="highlight-recommendation-list"
+                    class="highlight-recommendations__list"
+                  >
                     <li class="empty">추천을 준비하는 중...</li>
                   </ul>
                 </div>
                 <ul id="tournament-highlights" class="highlight-list">
-                  <li class="empty">하이라이트가 준비되면 여기에 표시됩니다.</li>
+                  <li class="empty">
+                    하이라이트가 준비되면 여기에 표시됩니다.
+                  </li>
                 </ul>
                 <div class="favorite-highlights">
                   <div class="favorite-highlights__header">
                     <h4>즐겨찾은 클립</h4>
-                    <button id="clear-highlight-favorites" class="btn btn--ghost btn--tiny" type="button">
+                    <button
+                      id="clear-highlight-favorites"
+                      class="btn btn--ghost btn--tiny"
+                      type="button"
+                    >
                       전체 비우기
                     </button>
                   </div>
-                  <ul id="favorite-highlights" class="highlight-list highlight-list--favorites">
+                  <ul
+                    id="favorite-highlights"
+                    class="highlight-list highlight-list--favorites"
+                  >
                     <li class="empty">즐겨찾은 클립이 없습니다.</li>
                   </ul>
                 </div>
-                <div class="highlight-import-report" id="highlight-import-report">
+                <div
+                  class="highlight-import-report"
+                  id="highlight-import-report"
+                >
                   <div class="highlight-import-report__header">
                     <h4>최근 임포트 리포트</h4>
                   </div>
-                  <ul id="highlight-import-log" class="highlight-import-report__list">
+                  <ul
+                    id="highlight-import-log"
+                    class="highlight-import-report__list"
+                  >
                     <li class="empty">아직 리포트가 없습니다.</li>
                   </ul>
                 </div>
@@ -350,7 +526,11 @@
             <h2>채팅</h2>
             <div id="chat-log" class="chat__log"></div>
             <form id="chat-form" class="chat__input" autocomplete="off">
-              <input id="chat-message" placeholder="메시지를 입력하세요" maxlength="140" />
+              <input
+                id="chat-message"
+                placeholder="메시지를 입력하세요"
+                maxlength="140"
+              />
               <button class="btn btn--primary" type="submit">전송</button>
             </form>
           </section>
@@ -379,20 +559,31 @@
           <h2>리플레이</h2>
           <button id="close-replay" class="btn btn--ghost">닫기</button>
         </header>
-        <p class="modal__hint">재생 속도와 구간을 조절해 지난 경기를 다시 확인하세요.</p>
+        <p class="modal__hint">
+          재생 속도와 구간을 조절해 지난 경기를 다시 확인하세요.
+        </p>
         <div class="replay__controls">
           <button id="replay-play" class="btn btn--primary">재생</button>
           <button id="replay-pause" class="btn btn--secondary">일시정지</button>
           <label class="field">
             <span>재생 속도</span>
-            <input id="replay-speed" type="range" min="0.25" max="2" step="0.25" value="1" />
+            <input
+              id="replay-speed"
+              type="range"
+              min="0.25"
+              max="2"
+              step="0.25"
+              value="1"
+            />
           </label>
           <label class="field">
             <span>타임라인</span>
             <div class="replay-timeline" id="replay-timeline">
               <p id="replay-timeline-instructions" class="sr-only">
-                타임라인 마커에 포커스가 있을 때 왼쪽과 오른쪽 화살표로 이전/다음 마커로 이동하고,
-                Home과 End 키로 처음과 끝 마커로 이동할 수 있습니다. 엔터 또는 스페이스 키를 눌러 해당 시점으로 즉시 이동합니다.
+                타임라인 마커에 포커스가 있을 때 왼쪽과 오른쪽 화살표로
+                이전/다음 마커로 이동하고, Home과 End 키로 처음과 끝 마커로
+                이동할 수 있습니다. 엔터 또는 스페이스 키를 눌러 해당 시점으로
+                즉시 이동합니다.
               </p>
               <div
                 class="replay-timeline__markers"
@@ -401,8 +592,19 @@
                 aria-label="리플레이 주요 이벤트"
                 aria-describedby="replay-timeline-instructions"
               ></div>
-              <div id="replay-marker-status" class="sr-only" aria-live="polite"></div>
-              <input id="replay-progress" type="range" min="0" max="1" step="0.01" value="0" />
+              <div
+                id="replay-marker-status"
+                class="sr-only"
+                aria-live="polite"
+              ></div>
+              <input
+                id="replay-progress"
+                type="range"
+                min="0"
+                max="1"
+                step="0.01"
+                value="0"
+              />
             </div>
           </label>
         </div>

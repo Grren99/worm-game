@@ -1,4 +1,4 @@
-import { MODE_MAP, PLAYER_COLOR_KEYS } from './state.js';
+import { MODE_MAP, PLAYER_COLOR_KEYS } from "./state.js";
 
 const buildPlayerMap = (players = []) => {
   const map = new Map();
@@ -8,20 +8,24 @@ const buildPlayerMap = (players = []) => {
   return map;
 };
 
-const buildHighlightState = ({ favorites = [], filters = { query: '', tags: [] }, importReports = [] } = {}) => ({
+const buildHighlightState = ({
+  favorites = [],
+  filters = { query: "", tags: [] },
+  importReports = [],
+} = {}) => ({
   clips: [],
   summary: null,
   stats: [],
   favorites,
   recommendations: [],
   filters,
-  importReports
+  importReports,
 });
 
 const EFFECT_COLORS = {
-  speed: '#faad14',
-  shield: '#13c2c2',
-  shrink: '#9254de'
+  speed: "#faad14",
+  shield: "#13c2c2",
+  shrink: "#9254de",
 };
 
 export class NetworkController {
@@ -38,154 +42,252 @@ export class NetworkController {
       this.state.network = {
         latency: null,
         lastPingAt: null,
-        quality: 'unknown'
+        quality: "unknown",
       };
     }
   }
 
+  startLatencyChecks() {
+    if (this.latencyInterval) return;
+
+    this.latencyInterval = setInterval(() => {
+      this.pingServer();
+    }, 5000);
+
+    // 첫 번째 핑은 즉시 실행
+    this.pingServer();
+  }
+
+  stopLatencyChecks(reason = {}) {
+    if (this.latencyInterval) {
+      clearInterval(this.latencyInterval);
+      this.latencyInterval = null;
+    }
+
+    if (this.latencyTimeout) {
+      clearTimeout(this.latencyTimeout);
+      this.latencyTimeout = null;
+    }
+
+    this.latencyInFlight = false;
+
+    if (reason.reason) {
+      this.ui.updateLatency(null, {
+        reason: reason.reason,
+        quality: "unknown",
+      });
+    }
+  }
+
+  pingServer() {
+    if (this.latencyInFlight) return;
+
+    this.latencyInFlight = true;
+    const startTime = Date.now();
+
+    this.socket.emit("ping", () => {
+      const latency = Date.now() - startTime;
+      this.latencyInFlight = false;
+
+      let quality = "unknown";
+      if (latency < 50) quality = "excellent";
+      else if (latency < 100) quality = "good";
+      else if (latency < 200) quality = "fair";
+      else quality = "poor";
+
+      this.state.network.latency = latency;
+      this.state.network.lastPingAt = Date.now();
+      this.state.network.quality = quality;
+
+      this.ui.updateLatency(latency, { reason: "measured", quality });
+    });
+
+    // 타임아웃 처리
+    this.latencyTimeout = setTimeout(() => {
+      this.latencyInFlight = false;
+      this.ui.updateLatency(null, { reason: "timeout", quality: "poor" });
+    }, 3000);
+  }
+
   init() {
-    this.socket.on('rooms:list', (rooms) => {
+    this.socket.on("rooms:list", (rooms) => {
       this.state.rooms = rooms;
       this.ui.renderRooms();
     });
 
-    this.socket.on('rooms:updated', (rooms) => {
+    this.socket.on("rooms:updated", (rooms) => {
       this.state.rooms = rooms;
       this.ui.renderRooms();
     });
 
-    this.socket.on('player:assigned', ({ playerId, roomId, world, color, mode }) => {
-      this.state.playerId = playerId;
-      this.state.roomId = roomId;
-      this.state.world = world;
-      this.state.personal.profile = null;
-      this.ui.renderPlayerProfile();
-      this.state.achievements = [];
-      this.ui.renderAchievements();
-      const previousColor = this.state.preferences.color;
-      if (color && PLAYER_COLOR_KEYS.includes(color)) {
-        this.ui.applyPreferredColor(color);
-        if (previousColor && previousColor !== color) {
-          this.ui.notify('선택한 색상이 이미 사용 중이라 다른 색상이 배정되었습니다.', 'warn');
+    this.socket.on(
+      "player:assigned",
+      ({ playerId, roomId, world, color, mode }) => {
+        this.state.playerId = playerId;
+        this.state.roomId = roomId;
+        this.state.world = world;
+        this.state.personal.profile = null;
+        this.ui.renderPlayerProfile();
+        this.state.achievements = [];
+        this.ui.renderAchievements();
+        const previousColor = this.state.preferences.color;
+        if (color && PLAYER_COLOR_KEYS.includes(color)) {
+          this.ui.applyPreferredColor(color);
+          if (previousColor && previousColor !== color) {
+            this.ui.notify(
+              "선택한 색상이 이미 사용 중이라 다른 색상이 배정되었습니다.",
+              "warn"
+            );
+          }
         }
-      }
-      if (mode?.key && MODE_MAP.has(mode.key)) {
-        this.state.preferences.mode = mode.key;
-        if (this.ui.elements.modeSelect) {
-          this.ui.elements.modeSelect.value = mode.key;
-          this.ui.updateModeDescription();
+        if (mode?.key && MODE_MAP.has(mode.key)) {
+          this.state.preferences.mode = mode.key;
+          if (this.ui.elements.modeSelect) {
+            this.ui.elements.modeSelect.value = mode.key;
+            this.ui.updateModeDescription();
+          }
         }
+        this.ui.elements.worldInfo.textContent = `맵: ${world.width} x ${world.height}`;
+        this.ui.elements.replayButton.disabled = true;
+        this.ui.notify(
+          `플레이어 ID가 부여되었습니다 (${playerId.slice(0, 6)})`
+        );
+        const favorites = this.state.highlights?.favorites || [];
+        const filters = this.state.highlights?.filters || {
+          query: "",
+          tags: [],
+        };
+        const importReports = this.state.highlights?.importReports || [];
+        this.state.highlights = buildHighlightState({
+          favorites,
+          filters,
+          importReports,
+        });
+        this.ui.renderHighlights();
+        if (this.state.audioEnabled) this.audio.playBgm();
       }
-      this.ui.elements.worldInfo.textContent = `맵: ${world.width} x ${world.height}`;
-      this.ui.elements.replayButton.disabled = true;
-      this.ui.notify(`플레이어 ID가 부여되었습니다 (${playerId.slice(0, 6)})`);
-      const favorites = this.state.highlights?.favorites || [];
-      const filters = this.state.highlights?.filters || { query: '', tags: [] };
-      const importReports = this.state.highlights?.importReports || [];
-      this.state.highlights = buildHighlightState({ favorites, filters, importReports });
-      this.ui.renderHighlights();
-      if (this.state.audioEnabled) this.audio.playBgm();
-    });
+    );
 
-    this.socket.on('player:profile', (profile) => {
+    this.socket.on("player:profile", (profile) => {
       this.state.personal.profile = profile || null;
       this.ui.renderPlayerProfile();
     });
 
-    this.socket.on('game:state', (gameState) => {
+    this.socket.on("game:state", (gameState) => {
       this.handleGameState(gameState);
     });
 
-    this.socket.on('game:ended', ({ winnerId, leaderboard, tournament, highlights, achievements }) => {
-      if (typeof this.audio?.playMatchEnd === 'function') {
-        this.audio.playMatchEnd();
-      }
-      this.ui.elements.replayButton.disabled = false;
-      const winner = leaderboard?.find((item) => item.id === winnerId);
-      if (tournament?.championId) {
-        const champion = leaderboard?.find((entry) => entry.id === tournament.championId);
-        if (champion) {
-          this.ui.notify(`${champion.name}님이 토너먼트 우승을 차지했습니다!`, 'success');
-          if (champion.id === this.state.playerId) this.audio.playWin();
+    this.socket.on(
+      "game:ended",
+      ({ winnerId, leaderboard, tournament, highlights, achievements }) => {
+        if (typeof this.audio?.playMatchEnd === "function") {
+          this.audio.playMatchEnd();
         }
-      } else if (winner) {
-        this.ui.notify(`${winner.name}님의 승리! 축하합니다!`, 'success');
-        if (winnerId === this.state.playerId) this.audio.playWin();
-      } else {
-        this.ui.notify('게임이 종료되었습니다.', 'info');
-      }
-      const favorites = this.state.highlights?.favorites || [];
-      const filters = this.state.highlights?.filters || { query: '', tags: [] };
-      const importReports = this.state.highlights?.importReports || [];
-      if (highlights) {
-        this.state.highlights = {
-          clips: Array.isArray(highlights.clips) ? highlights.clips : [],
-          summary: highlights.summary || null,
-          stats: Array.isArray(highlights.stats) ? highlights.stats : [],
-          favorites,
-          recommendations: [],
-          filters,
-          importReports
+        this.ui.elements.replayButton.disabled = false;
+        const winner = leaderboard?.find((item) => item.id === winnerId);
+        if (tournament?.championId) {
+          const champion = leaderboard?.find(
+            (entry) => entry.id === tournament.championId
+          );
+          if (champion) {
+            this.ui.notify(
+              `${champion.name}님이 토너먼트 우승을 차지했습니다!`,
+              "success"
+            );
+            if (champion.id === this.state.playerId) this.audio.playWin();
+          }
+        } else if (winner) {
+          this.ui.notify(`${winner.name}님의 승리! 축하합니다!`, "success");
+          if (winnerId === this.state.playerId) this.audio.playWin();
+        } else {
+          this.ui.notify("게임이 종료되었습니다.", "info");
+        }
+        const favorites = this.state.highlights?.favorites || [];
+        const filters = this.state.highlights?.filters || {
+          query: "",
+          tags: [],
         };
-      } else {
-        this.state.highlights = buildHighlightState({ favorites, filters, importReports });
+        const importReports = this.state.highlights?.importReports || [];
+        if (highlights) {
+          this.state.highlights = {
+            clips: Array.isArray(highlights.clips) ? highlights.clips : [],
+            summary: highlights.summary || null,
+            stats: Array.isArray(highlights.stats) ? highlights.stats : [],
+            favorites,
+            recommendations: [],
+            filters,
+            importReports,
+          };
+        } else {
+          this.state.highlights = buildHighlightState({
+            favorites,
+            filters,
+            importReports,
+          });
+        }
+        this.ui.renderHighlights();
+        if (Array.isArray(achievements)) {
+          this.state.achievements = achievements;
+        } else {
+          this.state.achievements = [];
+        }
+        this.ui.renderAchievements();
       }
-      this.ui.renderHighlights();
-      if (Array.isArray(achievements)) {
-        this.state.achievements = achievements;
-      } else {
-        this.state.achievements = [];
-      }
-      this.ui.renderAchievements();
-    });
+    );
 
-    this.socket.on('chat:message', (message) => {
+    this.socket.on("chat:message", (message) => {
       this.state.chat.push(message);
       this.state.chat = this.state.chat.slice(-80);
       this.ui.renderChat();
     });
 
-    this.socket.on('room:notification', (note = {}) => {
-      const type = note.type || 'info';
+    this.socket.on("room:notification", (note = {}) => {
+      const type = note.type || "info";
       this.ui.notify(note.message, type);
-      if (typeof this.audio?.playNotification === 'function') {
-        const normalized = type === 'warning' ? 'warn' : type;
+      if (typeof this.audio?.playNotification === "function") {
+        const normalized = type === "warning" ? "warn" : type;
         this.audio.playNotification(normalized);
       }
     });
 
-    this.socket.on('room:replay', ({ frames, markers, world }) => {
-      if (world && typeof world === 'object') {
+    this.socket.on("room:replay", ({ frames, markers, world }) => {
+      if (world && typeof world === "object") {
         this.state.world = {
           ...this.state.world,
-          width: Number.isFinite(world.width) ? world.width : this.state.world.width,
-          height: Number.isFinite(world.height) ? world.height : this.state.world.height,
-          segmentSize: Number.isFinite(world.segmentSize) ? world.segmentSize : this.state.world.segmentSize
+          width: Number.isFinite(world.width)
+            ? world.width
+            : this.state.world.width,
+          height: Number.isFinite(world.height)
+            ? world.height
+            : this.state.world.height,
+          segmentSize: Number.isFinite(world.segmentSize)
+            ? world.segmentSize
+            : this.state.world.segmentSize,
         };
       }
       this.ui.openReplayModal({ frames, markers });
     });
 
-    this.socket.io.on('open', () => {
-      this.ui.setStatus('서버와 연결되었습니다.');
-      this.ui.updateLatency(null, { reason: 'measuring', quality: 'unknown' });
+    this.socket.io.on("open", () => {
+      this.ui.setStatus("서버와 연결되었습니다.");
+      this.ui.updateLatency(null, { reason: "measuring", quality: "unknown" });
       this.startLatencyChecks();
     });
 
-    this.socket.io.on('close', () => {
-      this.ui.setStatus('서버 연결 끊김', true);
+    this.socket.io.on("close", () => {
+      this.ui.setStatus("서버 연결 끊김", true);
       this.ui.elements.replayButton.disabled = true;
-      this.stopLatencyChecks({ reason: 'disconnected' });
+      this.stopLatencyChecks({ reason: "disconnected" });
     });
 
-    this.socket.io.on('reconnect_attempt', () => {
-      this.ui.setStatus('서버 재연결 중...');
-      this.stopLatencyChecks({ reason: 'reconnecting' });
+    this.socket.io.on("reconnect_attempt", () => {
+      this.ui.setStatus("서버 재연결 중...");
+      this.stopLatencyChecks({ reason: "reconnecting" });
     });
 
-    this.socket.io.on('reconnect', () => {
-      this.ui.setStatus('서버 재연결 완료');
-      this.ui.updateLatency(null, { reason: 'measuring', quality: 'unknown' });
+    this.socket.io.on("reconnect", () => {
+      this.ui.setStatus("서버 재연결 완료");
+      this.ui.updateLatency(null, { reason: "measuring", quality: "unknown" });
       this.startLatencyChecks();
     });
 
@@ -201,7 +303,7 @@ export class NetworkController {
         return {
           ...player,
           effects: normalized.effects,
-          effectTypes: normalized.types
+          effectTypes: normalized.types,
         };
       });
     }
@@ -209,11 +311,13 @@ export class NetworkController {
     const prevPlayers = buildPlayerMap(prevState?.players);
     let newEventFeedEntries = [];
     if (prevState && Array.isArray(gameState?.events)) {
-      const previousEvents = Array.isArray(prevState.events) ? prevState.events : [];
+      const previousEvents = Array.isArray(prevState.events)
+        ? prevState.events
+        : [];
       const previousIds = new Set(
         previousEvents
           .map((event) => (event?.id != null ? String(event.id) : null))
-          .filter((id) => typeof id === 'string' && id.length)
+          .filter((id) => typeof id === "string" && id.length)
       );
       newEventFeedEntries = gameState.events.filter((event) => {
         if (!event || event.id == null) return false;
@@ -228,40 +332,70 @@ export class NetworkController {
     const prevPhase = prevState?.phase;
     const audio = this.audio;
     if (audio) {
-      if (nextPhase === 'countdown' && typeof audio.playCountdownTick === 'function') {
-        const previousCountdown = typeof prevState?.countdown === 'number' ? prevState.countdown : null;
-        const currentCountdown = typeof gameState?.countdown === 'number' ? gameState.countdown : null;
-        const enteringCountdown = prevPhase !== 'countdown';
+      if (
+        nextPhase === "countdown" &&
+        typeof audio.playCountdownTick === "function"
+      ) {
+        const previousCountdown =
+          typeof prevState?.countdown === "number" ? prevState.countdown : null;
+        const currentCountdown =
+          typeof gameState?.countdown === "number" ? gameState.countdown : null;
+        const enteringCountdown = prevPhase !== "countdown";
         const countdownDecreased =
-          prevPhase === 'countdown' &&
+          prevPhase === "countdown" &&
           previousCountdown !== null &&
           currentCountdown !== null &&
           currentCountdown < previousCountdown;
-        if (currentCountdown !== null && currentCountdown > 0 && (enteringCountdown || countdownDecreased)) {
+        if (
+          currentCountdown !== null &&
+          currentCountdown > 0 &&
+          (enteringCountdown || countdownDecreased)
+        ) {
           audio.playCountdownTick();
         }
       }
-      if (nextPhase === 'running' && prevPhase !== 'running' && typeof audio.playMatchStart === 'function') {
+      if (
+        nextPhase === "running" &&
+        prevPhase !== "running" &&
+        typeof audio.playMatchStart === "function"
+      ) {
         audio.playMatchStart();
       }
     }
     this.updateSpectatorState(gameState);
     this.ui.handleGamePhase();
-    if (newEventFeedEntries.length && typeof this.ui?.registerEventFeedEvents === 'function') {
+    if (
+      newEventFeedEntries.length &&
+      typeof this.ui?.registerEventFeedEvents === "function"
+    ) {
       this.ui.registerEventFeedEvents(newEventFeedEntries);
     }
     this.ui.updateHud();
-    if (newEventFeedEntries.length && typeof this.audio?.playEventCue === 'function') {
+    if (
+      newEventFeedEntries.length &&
+      typeof this.audio?.playEventCue === "function"
+    ) {
       newEventFeedEntries.forEach((event, index) => {
-        this.audio.playEventCue(event, { index, total: newEventFeedEntries.length });
+        this.audio.playEventCue(event, {
+          index,
+          total: newEventFeedEntries.length,
+        });
       });
     }
 
-    if (prevState && gameState.round !== prevState.round && gameState.phase === 'running') {
+    if (
+      prevState &&
+      gameState.round !== prevState.round &&
+      gameState.phase === "running"
+    ) {
       const favorites = this.state.highlights?.favorites || [];
-      const filters = this.state.highlights?.filters || { query: '', tags: [] };
+      const filters = this.state.highlights?.filters || { query: "", tags: [] };
       const importReports = this.state.highlights?.importReports || [];
-      this.state.highlights = buildHighlightState({ favorites, filters, importReports });
+      this.state.highlights = buildHighlightState({
+        favorites,
+        filters,
+        importReports,
+      });
       this.ui.renderHighlights();
       this.state.achievements = [];
       this.ui.renderAchievements();
@@ -277,7 +411,13 @@ export class NetworkController {
         if (previousMe) {
           if (me.score > previousMe.score) {
             const head = me.segments?.[0];
-            if (head) this.renderer.addParticleBurst({ x: head.x, y: head.y, color: me.color, count: 12 });
+            if (head)
+              this.renderer.addParticleBurst({
+                x: head.x,
+                y: head.y,
+                color: me.color,
+                count: 12,
+              });
             this.audio.playFood();
           }
           if (previousMe.alive && !me.alive) {
@@ -286,15 +426,15 @@ export class NetworkController {
               this.renderer.addParticleBurst({
                 x: head.x,
                 y: head.y,
-                color: '#ff4d4f',
+                color: "#ff4d4f",
                 count: 26,
                 speed: 180,
-                life: 600
+                life: 600,
               });
             }
             if (this.state.personal.alive) {
               this.audio.playDeath();
-              this.ui.notify('탈락했습니다. 관전 모드!', 'warn');
+              this.ui.notify("탈락했습니다. 관전 모드!", "warn");
             }
           }
           this.emitEffectBursts(me, previousMe, { isLocal: true });
@@ -311,10 +451,21 @@ export class NetworkController {
       const head = player.segments?.[0] || previous.segments?.[0];
       if (!head) return;
       if (player.score > previous.score) {
-        this.renderer.addParticleBurst({ x: head.x, y: head.y, color: player.color, count: 8 });
+        this.renderer.addParticleBurst({
+          x: head.x,
+          y: head.y,
+          color: player.color,
+          count: 8,
+        });
       }
       if (previous.alive && !player.alive) {
-        this.renderer.addParticleBurst({ x: head.x, y: head.y, color: '#fa541c', count: 20, speed: 200 });
+        this.renderer.addParticleBurst({
+          x: head.x,
+          y: head.y,
+          color: "#fa541c",
+          count: 20,
+          speed: 200,
+        });
       }
       this.emitEffectBursts(player, previous, { isLocal: false });
     });
@@ -327,12 +478,12 @@ export class NetworkController {
     const effects = [];
     const types = [];
     list.forEach((item) => {
-      if (typeof item === 'string') {
+      if (typeof item === "string") {
         effects.push({ type: item, remaining: null, total: null });
         types.push(item);
         return;
       }
-      if (!item || typeof item !== 'object') return;
+      if (!item || typeof item !== "object") return;
       const type = item.type || item.effect || item.name;
       if (!type) return;
       const remaining = Number.isFinite(item.remaining) ? item.remaining : null;
@@ -351,8 +502,8 @@ export class NetworkController {
     const effects = Array.isArray(source.effects) ? source.effects : [];
     return effects
       .map((effect) => {
-        if (typeof effect === 'string') return effect;
-        if (effect && typeof effect === 'object') {
+        if (typeof effect === "string") return effect;
+        if (effect && typeof effect === "object") {
           return effect.type || effect.effect || effect.name;
         }
         return null;
@@ -373,21 +524,24 @@ export class NetworkController {
         y: head.y,
         color: EFFECT_COLORS[effect] || current.color,
         count: 10,
-        speed: 140
+        speed: 140,
       });
-      if (isLocal && typeof this.audio?.startEffectLoop === 'function') {
+      if (isLocal && typeof this.audio?.startEffectLoop === "function") {
         this.audio.startEffectLoop(effect);
-      } else if (!isLocal && typeof this.audio?.playPowerupStart === 'function') {
-        this.audio.playPowerupStart(effect, { scope: 'remote' });
+      } else if (
+        !isLocal &&
+        typeof this.audio?.playPowerupStart === "function"
+      ) {
+        this.audio.playPowerupStart(effect, { scope: "remote" });
       }
     });
 
     before.forEach((effect) => {
       if (after.has(effect)) return;
-      if (isLocal && typeof this.audio?.stopEffectLoop === 'function') {
+      if (isLocal && typeof this.audio?.stopEffectLoop === "function") {
         this.audio.stopEffectLoop(effect, { playTail: true });
-      } else if (!isLocal && typeof this.audio?.playPowerupEnd === 'function') {
-        this.audio.playPowerupEnd(effect, { scope: 'remote' });
+      } else if (!isLocal && typeof this.audio?.playPowerupEnd === "function") {
+        this.audio.playPowerupEnd(effect, { scope: "remote" });
       }
     });
   }
@@ -398,13 +552,18 @@ export class NetworkController {
 
     const previousFocus = spectator.focusId;
     const players = Array.isArray(gameState?.players) ? gameState.players : [];
-    const leaderboard = Array.isArray(gameState?.leaderboard) ? gameState.leaderboard : [];
+    const leaderboard = Array.isArray(gameState?.leaderboard)
+      ? gameState.leaderboard
+      : [];
     const alivePlayers = players.filter((player) => player.alive);
     const focusCandidates = leaderboard.length
-      ? leaderboard.filter((entry) => alivePlayers.find((player) => player.id === entry.id))
+      ? leaderboard.filter((entry) =>
+          alivePlayers.find((player) => player.id === entry.id)
+        )
       : alivePlayers;
 
-    const me = players.find((player) => player.id === this.state.playerId) || null;
+    const me =
+      players.find((player) => player.id === this.state.playerId) || null;
     if (!players.length) {
       spectator.active = false;
       spectator.focusId = null;
@@ -421,7 +580,9 @@ export class NetworkController {
 
     const candidateIds = focusCandidates.map((entry) => entry.id);
     if (!spectator.focusId || !candidateIds.includes(spectator.focusId)) {
-      const fallback = alivePlayers.find((player) => candidateIds.includes(player.id)) || alivePlayers[0];
+      const fallback =
+        alivePlayers.find((player) => candidateIds.includes(player.id)) ||
+        alivePlayers[0];
       spectator.focusId = fallback?.id || null;
     }
 
@@ -455,7 +616,7 @@ export class NetworkController {
       spectator.active &&
       spectator.focusId &&
       spectator.focusId !== previousFocus &&
-      typeof this.audio?.playSpectatorFocus === 'function'
+      typeof this.audio?.playSpectatorFocus === "function"
     ) {
       this.audio.playSpectatorFocus({ subtle: true });
     }

@@ -2567,6 +2567,14 @@ const getJoinableRooms = () => {
 
 io.on("connection", (socket) => {
   socket.emit("rooms:list", getJoinableRooms());
+
+  // 핑 핸들러 추가
+  socket.on("ping", (callback) => {
+    if (typeof callback === "function") {
+      callback();
+    }
+  });
+
   socket.on("rooms:refresh", () => {
     socket.emit("rooms:list", getJoinableRooms());
   });
