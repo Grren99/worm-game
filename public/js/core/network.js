@@ -8,6 +8,16 @@ const buildPlayerMap = (players = []) => {
   return map;
 };
 
+const buildHighlightState = ({ favorites = [], filters = { query: '', tags: [] }, importReports = [] } = {}) => ({
+  clips: [],
+  summary: null,
+  stats: [],
+  favorites,
+  recommendations: [],
+  filters,
+  importReports
+});
+
 const EFFECT_COLORS = {
   speed: '#faad14',
   shield: '#13c2c2',
@@ -61,7 +71,8 @@ export class NetworkController {
       this.ui.notify(`플레이어 ID가 부여되었습니다 (${playerId.slice(0, 6)})`);
       const favorites = this.state.highlights?.favorites || [];
       const filters = this.state.highlights?.filters || { query: '', tags: [] };
-      this.state.highlights = { clips: [], summary: null, stats: [], favorites, filters };
+      const importReports = this.state.highlights?.importReports || [];
+      this.state.highlights = buildHighlightState({ favorites, filters, importReports });
       this.ui.renderHighlights();
       if (this.state.audioEnabled) this.audio.playBgm();
     });
@@ -92,16 +103,19 @@ export class NetworkController {
       }
       const favorites = this.state.highlights?.favorites || [];
       const filters = this.state.highlights?.filters || { query: '', tags: [] };
+      const importReports = this.state.highlights?.importReports || [];
       if (highlights) {
         this.state.highlights = {
           clips: Array.isArray(highlights.clips) ? highlights.clips : [],
           summary: highlights.summary || null,
           stats: Array.isArray(highlights.stats) ? highlights.stats : [],
           favorites,
-          filters
+          recommendations: [],
+          filters,
+          importReports
         };
       } else {
-        this.state.highlights = { clips: [], summary: null, stats: [], favorites, filters };
+        this.state.highlights = buildHighlightState({ favorites, filters, importReports });
       }
       this.ui.renderHighlights();
       if (Array.isArray(achievements)) {
@@ -155,7 +169,8 @@ export class NetworkController {
     if (prevState && gameState.round !== prevState.round && gameState.phase === 'running') {
       const favorites = this.state.highlights?.favorites || [];
       const filters = this.state.highlights?.filters || { query: '', tags: [] };
-      this.state.highlights = { clips: [], summary: null, stats: [], favorites, filters };
+      const importReports = this.state.highlights?.importReports || [];
+      this.state.highlights = buildHighlightState({ favorites, filters, importReports });
       this.ui.renderHighlights();
       this.state.achievements = [];
       this.ui.renderAchievements();

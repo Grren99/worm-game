@@ -63,10 +63,12 @@ export const initialState = () => ({
     summary: null,
     stats: [],
     favorites: [],
+    recommendations: [],
     filters: {
       query: '',
       tags: []
-    }
+    },
+    importReports: []
   },
   achievements: [],
   audioEnabled: false,

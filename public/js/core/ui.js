@@ -7,6 +7,8 @@ import {
   POWERUP_ICON,
   POWERUP_LABEL
 } from './state.js';
+import { recommendClips } from './highlightRecommender.js';
+import { validateHighlightClip } from './highlightValidator.js';
 
 const ROOM_PHASE_LABEL = {
   waiting: '대기중',
@@ -654,22 +656,65 @@ export class UIManager {
     try {
       const text = await file.text();
       const data = JSON.parse(text);
-      const clip = data?.clip ? { ...data.clip } : { ...data };
-      if (!clip || !Array.isArray(clip.frames) || !clip.frames.length) {
-        throw new Error('invalid clip');
+      const rawClip = data?.clip ? { ...data.clip } : { ...data };
+      const validation = validateHighlightClip({ clip: rawClip, sourceName: file.name });
+      const reportBase = {
+        id: crypto.randomUUID(),
+        status: 'success',
+        fileName: file.name || null,
+        importedAt: Date.now(),
+        clipTitle: validation.clip?.title || rawClip?.title || '하이라이트',
+        warnings: validation.warnings,
+        errors: validation.errors,
+        stats: validation.stats
+      };
+
+      if (validation.errors.length || !validation.clip) {
+        reportBase.status = 'error';
+        const reason = validation.errors[0] || '하이라이트를 가져오지 못했습니다.';
+        reportBase.message = `${reportBase.clipTitle || '하이라이트'} · ${reason}`;
+        this.pushHighlightImportReport(reportBase);
+        this.notify(`하이라이트 임포트 실패: ${reason}`, 'error');
+        return;
       }
+
+      const clip = validation.clip;
       clip.id = clip.id || `import-${crypto.randomUUID()}`;
       clip.timestamp = clip.timestamp || Date.now();
       if (!Array.isArray(clip.tags) || !clip.tags.length) {
         clip.tags = this.buildClipTags(clip);
       }
+
       this.highlightLibrary.add(clip);
       this.syncHighlightFavorites();
       this.renderHighlights();
+
+      const clipTitle = reportBase.clipTitle || '하이라이트';
+      if (validation.warnings.length) {
+        this.notify(`임포트 경고: ${validation.warnings[0]}`, 'warn');
+        reportBase.status = 'warning';
+        reportBase.message = `${clipTitle} · 경고 ${validation.warnings.length}건과 함께 저장되었습니다.`;
+      } else {
+        reportBase.status = 'success';
+        reportBase.message = `${clipTitle} · 즐겨찾기에 저장되었습니다.`;
+      }
+
       this.notify('하이라이트 JSON을 가져와 즐겨찾기에 저장했습니다.', 'success');
+      this.pushHighlightImportReport(reportBase);
     } catch (error) {
       console.error('Failed to import highlight clip', error);
       this.notify('JSON 하이라이트를 불러오지 못했습니다.', 'error');
+      const failedReport = {
+        id: crypto.randomUUID(),
+        status: 'error',
+        message: `${file?.name || '파일'} · JSON 파싱 실패`,
+        fileName: file?.name || null,
+        importedAt: Date.now(),
+        errors: ['JSON 파싱 실패'],
+        warnings: [],
+        stats: null
+      };
+      this.pushHighlightImportReport(failedReport);
     }
   }
 
@@ -678,10 +723,14 @@ export class UIManager {
     const data = this.state.highlights || {};
     const clips = Array.isArray(data.clips) ? data.clips : [];
     const summary = data.summary || null;
-    const favorites = new Set((this.state.highlights?.favorites || []).map((entry) => entry.id));
+    const favoriteClips = Array.isArray(this.state.highlights?.favorites)
+      ? this.state.highlights.favorites
+      : [];
+    const favoriteIds = new Set(favoriteClips.map((entry) => entry.id));
 
     this.renderHighlightFilters();
     this.renderFavoriteHighlights();
+    this.renderHighlightImportReport();
 
     if (!summary) {
       this.elements.highlightSummary.textContent = '하이라이트 데이터를 기다리는 중...';
@@ -704,6 +753,17 @@ export class UIManager {
         : '이번 라운드에서 특이사항이 없습니다.';
     }
 
+    const recommendationEntries = clips.map((clip, index) => ({ clip, index }));
+    const recommendations = recommendClips(recommendationEntries, {
+      limit: 3,
+      favorites: favoriteIds,
+      playerId: this.state.playerId,
+      preferredTags: this.getHighlightFilters().tags,
+      stats: Array.isArray(data.stats) ? data.stats : []
+    });
+    this.state.highlights.recommendations = recommendations;
+    this.renderHighlightRecommendations(recommendations, favoriteIds);
+
     if (!clips.length) {
       this.elements.highlightList.innerHTML = '<li class="empty">하이라이트가 준비되면 여기에 표시됩니다.</li>';
       return;
@@ -717,7 +777,7 @@ export class UIManager {
 
     this.elements.highlightList.innerHTML = entries
       .map(({ clip, index }) => {
-        const isFavorite = favorites.has(clip.id);
+        const isFavorite = favoriteIds.has(clip.id);
         return `
         <li>
           <div class="highlight-card" data-highlight-id="${clip.id}">
@@ -794,6 +854,122 @@ export class UIManager {
         this.toggleHighlightTag(tagButton.dataset.tag);
       });
     });
+  }
+
+  renderHighlightRecommendations(recommendations = [], favoriteIds = new Set()) {
+    const container = this.elements.highlightRecommendations;
+    const list = this.elements.highlightRecommendationList;
+    if (!container || !list) return;
+    if (!Array.isArray(recommendations) || !recommendations.length) {
+      list.innerHTML = '<li class="empty">추천을 준비하는 중...</li>';
+      return;
+    }
+    list.innerHTML = recommendations
+      .map((entry) => {
+        const clip = entry.clip;
+        const isFavorite = favoriteIds.has(clip.id);
+        const favoriteLabel = isFavorite ? '즐겨찾기 해제' : '즐겨찾기';
+        const favoriteIcon = isFavorite ? '★' : '☆';
+        return `
+        <li>
+          <div class="highlight-recommendation" data-highlight-id="${clip.id}">
+            <div class="highlight-recommendation__header">
+              <span class="highlight-recommendation__badge">추천</span>
+              <strong>${clip.title || '하이라이트'}</strong>
+              <span class="highlight-recommendation__score">점수 ${entry.score}</span>
+            </div>
+            <p class="highlight-recommendation__reason">${entry.reason || '최근 경기 기반 추천 클립입니다.'}</p>
+            ${this.renderClipTags(clip)}
+            <div class="highlight-recommendation__actions">
+              <button type="button" data-action="play" data-index="${entry.index}">재생</button>
+              <button type="button" data-action="favorite" data-highlight-id="${clip.id}">
+                ${favoriteIcon} ${favoriteLabel}
+              </button>
+            </div>
+          </div>
+        </li>`;
+      })
+      .join('');
+
+    list.querySelectorAll('[data-action="play"]').forEach((button) => {
+      button.addEventListener('click', () => {
+        const index = Number.parseInt(button.dataset.index, 10);
+        if (Number.isNaN(index)) {
+          this.notify('추천 하이라이트를 찾을 수 없습니다.', 'warn');
+          return;
+        }
+        this.playHighlightClip(index);
+      });
+    });
+
+    list.querySelectorAll('[data-action="favorite"]').forEach((button) => {
+      button.addEventListener('click', () => {
+        const id = button.dataset.highlightId;
+        this.toggleHighlightFavorite(id);
+      });
+    });
+
+    list.querySelectorAll('.highlight-tag').forEach((tagButton) => {
+      tagButton.addEventListener('click', (event) => {
+        event.preventDefault();
+        this.toggleHighlightTag(tagButton.dataset.tag);
+      });
+    });
+  }
+
+  pushHighlightImportReport(report) {
+    if (!report) return;
+    if (!this.state.highlights) this.state.highlights = {};
+    if (!Array.isArray(this.state.highlights.importReports)) {
+      this.state.highlights.importReports = [];
+    }
+    this.state.highlights.importReports.unshift(report);
+    this.state.highlights.importReports = this.state.highlights.importReports.slice(0, 6);
+    this.renderHighlightImportReport();
+  }
+
+  renderHighlightImportReport() {
+    const container = this.elements.highlightImportReport;
+    const list = this.elements.highlightImportLog;
+    if (!container || !list) return;
+    const reports = Array.isArray(this.state.highlights?.importReports)
+      ? this.state.highlights.importReports
+      : [];
+    if (!reports.length) {
+      list.innerHTML = '<li class="empty">아직 리포트가 없습니다.</li>';
+      return;
+    }
+
+    list.innerHTML = reports
+      .map((report) => {
+        const statusIcon =
+          report.status === 'success' ? '✅' : report.status === 'warning' ? '⚠️' : '❌';
+        const statusLabel =
+          report.status === 'success' ? '성공' : report.status === 'warning' ? '경고 포함 성공' : '실패';
+        const issues = [];
+        if (Array.isArray(report.errors) && report.errors.length) {
+          issues.push(`에러 ${report.errors.length}건`);
+        }
+        if (Array.isArray(report.warnings) && report.warnings.length) {
+          issues.push(`경고 ${report.warnings.length}건`);
+        }
+        const metaParts = [];
+        if (report.fileName) metaParts.push(report.fileName);
+        if (report.stats?.frameCount) metaParts.push(`프레임 ${report.stats.frameCount}`);
+        if (report.stats?.samplePlayers) metaParts.push(`플레이어 ${report.stats.samplePlayers}명`);
+        const timeLabel = report.importedAt ? this.formatTime(report.importedAt) : '';
+        return `
+        <li class="${report.status}">
+          <div class="highlight-import-report__status">${statusIcon} ${statusLabel}</div>
+          <div class="highlight-import-report__message">${report.message || '임포트 처리 결과를 확인하세요.'}</div>
+          <div class="highlight-import-report__meta">
+            ${issues.length ? `<span>${issues.join(' · ')}</span>` : ''}
+            ${metaParts.length ? `<span>${metaParts.join(' · ')}</span>` : ''}
+            ${timeLabel ? `<span>${timeLabel}</span>` : ''}
+          </div>
+        </li>`;
+      })
+      .join('');
   }
 
   renderFavoriteHighlights() {
