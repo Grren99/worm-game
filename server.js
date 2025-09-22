@@ -38,6 +38,12 @@ const POWERUP_EFFECT_TICKS = {
   [POWERUP_TYPES.SHRINK]: TICK_RATE * 1
 };
 
+const POWERUP_LABELS = {
+  [POWERUP_TYPES.SPEED]: '속도 증가',
+  [POWERUP_TYPES.SHIELD]: '무적',
+  [POWERUP_TYPES.SHRINK]: '작아지기'
+};
+
 const FOOD_TYPES = {
   BASIC: 'basic',
   GOLDEN: 'golden'
@@ -536,6 +542,7 @@ class RoomState {
     this.loop = null;
     this.pendingHighlights = [];
     this.roundHighlights = [];
+    this.eventFeed = [];
     this.roundStats = new Map();
     this.firstKillAwardedTo = null;
     this.tournament = this.mode.tournament
@@ -579,6 +586,96 @@ class RoomState {
     this.pendingHighlights.push(entry);
     if (this.pendingHighlights.length > 12) {
       this.pendingHighlights = this.pendingHighlights.slice(-12);
+    }
+    const feedEntry = this.buildEventFeedEntry(entry);
+    if (feedEntry) {
+      this.pushEventFeed(feedEntry);
+    }
+    return entry;
+  }
+
+  buildEventFeedEntry(event) {
+    if (!event || !event.type) return null;
+    switch (event.type) {
+      case 'kill': {
+        const killerId = event.killerId && event.killerId !== event.victimId ? event.killerId : null;
+        const killerName = killerId ? event.killerName : null;
+        const victimName = event.victimName || '플레이어';
+        const message = killerName ? `${killerName} ▶ ${victimName}` : `${victimName} 탈락`;
+        const causeLabel = this.describeKillCause(event.cause, killerName);
+        const accent = killerName ? event.killerColor : event.victimColor;
+        return {
+          type: 'kill',
+          message,
+          detail: causeLabel,
+          accent: accent || '#ff4d4f',
+          primaryId: killerId || event.victimId || null,
+          secondaryId: killerId ? event.victimId || null : null
+        };
+      }
+      case 'golden-food': {
+        const name = event.playerName || '플레이어';
+        const message = `${name} 골든 음식!`;
+        const detail = Number.isFinite(event.score) ? `누적 ${event.score}점` : null;
+        return {
+          type: 'golden-food',
+          message,
+          detail,
+          accent: event.playerColor || '#f5b301',
+          primaryId: event.playerId || null
+        };
+      }
+      case 'powerup': {
+        const label = POWERUP_LABELS[event.powerup] || '파워업';
+        const name = event.playerName || '플레이어';
+        return {
+          type: 'powerup',
+          message: `${name} ${label} 획득`,
+          detail: null,
+          accent: event.playerColor || '#13c2c2',
+          primaryId: event.playerId || null,
+          meta: { powerup: event.powerup }
+        };
+      }
+      case 'round-end': {
+        const roundNumber = Number.isFinite(event.round) ? event.round : this.round;
+        const winner = event.winnerName || null;
+        return {
+          type: 'round-end',
+          message: `라운드 ${roundNumber} 종료`,
+          detail: winner ? `${winner} 승리` : '무승부',
+          accent: event.winnerColor || '#faad14',
+          primaryId: event.winnerId || null
+        };
+      }
+      default:
+        return null;
+    }
+  }
+
+  describeKillCause(cause, hasKiller) {
+    switch (cause) {
+      case 'collision':
+        return hasKiller ? '충돌 승리' : '자기 몸에 부딪힘';
+      case 'wall':
+        return '벽에 충돌';
+      case 'self':
+        return '자기 몸에 부딪힘';
+      default:
+        return null;
+    }
+  }
+
+  pushEventFeed(payload = {}) {
+    const entry = {
+      id: uuidv4(),
+      timestamp: Date.now(),
+      ...payload
+    };
+    this.eventFeed.push(entry);
+    const maxSize = 10;
+    if (this.eventFeed.length > maxSize) {
+      this.eventFeed.splice(0, this.eventFeed.length - maxSize);
     }
     return entry;
   }
@@ -712,6 +809,7 @@ class RoomState {
     this.frameHistory = [];
     this.pendingHighlights = [];
     this.roundHighlights = [];
+    this.eventFeed = [];
     this.roundStats = new Map();
     this.firstKillAwardedTo = null;
     for (const player of this.players.values()) {
@@ -1018,7 +1116,8 @@ class RoomState {
       this.queueHighlight({
         type: 'round-end',
         winnerId: winner?.id || null,
-        winnerName: winner?.name || null
+        winnerName: winner?.name || null,
+        winnerColor: winner?.color || null
       });
       const achievementMap = this.gatherRoundAchievements({ winner });
       for (const player of this.players.values()) {
@@ -1118,6 +1217,7 @@ class RoomState {
       food: this.food,
       powerups: this.powerups,
       leaderboard: this.buildLeaderboard(),
+      events: this.eventFeed.map((entry) => ({ ...entry })),
       round: this.round,
       timestamp: Date.now(),
       tournament: this.serializeTournament()

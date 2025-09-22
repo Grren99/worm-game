@@ -34,6 +34,7 @@ export const elements = {
   scoreboardBody: document.querySelector('#scoreboard tbody'),
   aliveList: document.getElementById('alive-list'),
   effectsList: document.getElementById('player-effects'),
+  eventFeed: document.getElementById('event-feed'),
   playerProfile: document.getElementById('player-profile'),
   playerStatus: document.getElementById('player-status'),
   tournamentSection: document.getElementById('tournament-section'),

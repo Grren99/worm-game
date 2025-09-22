@@ -56,6 +56,13 @@ const ACCESSIBILITY_DEFAULTS = Object.freeze({
   colorblindPatterns: false
 });
 
+const EVENT_ICONS = {
+  'golden-food': '✨',
+  kill: '⚔️',
+  powerup: '🔋',
+  'round-end': '🏁'
+};
+
 export class UIManager {
   constructor({ state, elements, socket, audio, highlightLibrary }) {
     this.state = state;
@@ -769,6 +776,39 @@ export class UIManager {
     }
   }
 
+  renderEventFeed() {
+    if (!this.elements.eventFeed) return;
+    const events = Array.isArray(this.state.game?.events) ? this.state.game.events : [];
+    if (!events.length) {
+      this.elements.eventFeed.innerHTML = '<li class="empty">전투 이벤트를 기다리는 중...</li>';
+      return;
+    }
+    const entries = [...events].reverse();
+    this.elements.eventFeed.innerHTML = entries
+      .map((event, index) => {
+        const type = event.type || 'info';
+        const icon = EVENT_ICONS[type] || '🪱';
+        const message = escapeHtml(event.message || '이벤트');
+        const detail = event.detail ? escapeHtml(event.detail) : '';
+        const timestamp = Number.isFinite(event.timestamp) ? this.formatTime(event.timestamp) : '';
+        const accent = event.accent || '#40a9ff';
+        const classes = ['event-feed__item'];
+        if (index === 0) classes.push('event-feed__item--recent');
+        return `
+        <li class="${classes.join(' ')}" data-type="${type}" style="--event-accent:${accent}">
+          <span class="event-feed__icon">${icon}</span>
+          <div class="event-feed__content">
+            <span class="event-feed__message">${message}</span>
+            <div class="event-feed__meta">
+              ${detail ? `<span class="event-feed__detail">${detail}</span>` : ''}
+              ${timestamp ? `<time>${timestamp}</time>` : ''}
+            </div>
+          </div>
+        </li>`;
+      })
+      .join('');
+  }
+
   updateHud() {
     this.updateScoreboard();
     this.updateAliveList();
@@ -776,6 +816,7 @@ export class UIManager {
     this.updateTournamentStatus();
     this.updateModeIndicator();
     this.updateCountdown();
+    this.renderEventFeed();
     this.renderSpectatorHud();
   }
 
