@@ -73,7 +73,7 @@ npm run loadtest -- --players=32 --duration=90 --mode=battle
 - **추천·임포트 섹션**: 태그 기반 추천 하이라이트와 JSON 임포트 검증 리포트를 실시간으로 확인
 - **하이라이트 도구**: 검색창과 태그 필터로 원하는 클립을 찾고 JSON 가져오기/내보내기 지원
 - **리플레이 모드**: 경기 종료 후 상단 버튼으로 요청, 속도 조절과 타임라인 탐색 지원
-- **사운드**: 기본 BGM과 먹이/사망/우승 음향, 카운트다운·경기 시작/종료·입장·관전 전환 알림음 제공, 볼륨 슬라이더로 채팅/시스템 알림음을 세밀 조절 (사용자 토글 가능)
+- **사운드**: 기본 BGM과 먹이/사망/우승 음향, 카운트다운·경기 시작/종료·입장·관전 전환 알림음은 물론 파워업 발동/지속/해제 전용 루프 사운드 제공, 볼륨 슬라이더로 채팅/시스템 알림음을 세밀 조절 (사용자 토글 가능)
 
 ## 기술 스택
 - **프론트엔드**: HTML5 Canvas, 모듈형 JavaScript, CSS Grid/Flex
@@ -88,6 +88,7 @@ npm run loadtest -- --players=32 --duration=90 --mode=battle
 - `/api/stats` 엔드포인트로 현재까지의 글로벌 통계를 JSON 으로 확인할 수 있습니다
 - `/api/profile/:name` 엔드포인트로 특정 플레이어의 누적 전적을 불러올 수 있습니다 (MongoDB 연결 시 영구 저장)
 - 개발 중에는 `npm run dev` 로 nodemon 감시 실행이 가능합니다
+- WebAudio 믹서 구조와 파워업 사운드 시퀀스는 [`docs/audio/mixer-test-plan.md`](docs/audio/mixer-test-plan.md), [`docs/audio/powerup-sfx.md`](docs/audio/powerup-sfx.md)에 정리되어 있습니다
 
 ## 환경 변수
 - `MONGODB_URI`: MongoDB 연결 문자열. 설정하지 않으면 서버 메모리에 통계를 보관합니다.

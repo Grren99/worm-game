@@ -233,7 +233,7 @@ export class NetworkController {
               this.ui.notify('탈락했습니다. 관전 모드!', 'warn');
             }
           }
-          this.emitEffectBursts(me, previousMe);
+          this.emitEffectBursts(me, previousMe, { isLocal: true });
         }
         this.state.personal.lastScore = me.score;
         this.state.personal.alive = me.alive;
@@ -241,6 +241,7 @@ export class NetworkController {
     }
 
     gameState.players?.forEach((player) => {
+      if (player.id === this.state.playerId) return;
       const previous = prevPlayers.get(player.id);
       if (!previous) return;
       const head = player.segments?.[0] || previous.segments?.[0];
@@ -251,17 +252,19 @@ export class NetworkController {
       if (previous.alive && !player.alive) {
         this.renderer.addParticleBurst({ x: head.x, y: head.y, color: '#fa541c', count: 20, speed: 200 });
       }
-      this.emitEffectBursts(player, previous);
+      this.emitEffectBursts(player, previous, { isLocal: false });
     });
 
     this.state.lastState = gameState;
   }
 
-  emitEffectBursts(current, previous) {
+  emitEffectBursts(current, previous, { isLocal = false } = {}) {
     const before = new Set(previous?.effects || []);
-    const head = current.segments?.[0] || previous?.segments?.[0];
+    const after = new Set(current?.effects || []);
+    const head = current?.segments?.[0] || previous?.segments?.[0];
     if (!head) return;
-    (current.effects || []).forEach((effect) => {
+
+    after.forEach((effect) => {
       if (before.has(effect)) return;
       this.renderer.addParticleBurst({
         x: head.x,
@@ -270,6 +273,20 @@ export class NetworkController {
         count: 10,
         speed: 140
       });
+      if (isLocal && typeof this.audio?.startEffectLoop === 'function') {
+        this.audio.startEffectLoop(effect);
+      } else if (!isLocal && typeof this.audio?.playPowerupStart === 'function') {
+        this.audio.playPowerupStart(effect, { scope: 'remote' });
+      }
+    });
+
+    before.forEach((effect) => {
+      if (after.has(effect)) return;
+      if (isLocal && typeof this.audio?.stopEffectLoop === 'function') {
+        this.audio.stopEffectLoop(effect, { playTail: true });
+      } else if (!isLocal && typeof this.audio?.playPowerupEnd === 'function') {
+        this.audio.playPowerupEnd(effect, { scope: 'remote' });
+      }
     });
   }
 
