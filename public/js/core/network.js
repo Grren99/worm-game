@@ -59,7 +59,8 @@ export class NetworkController {
       this.ui.elements.worldInfo.textContent = `맵: ${world.width} x ${world.height}`;
       this.ui.elements.replayButton.disabled = true;
       this.ui.notify(`플레이어 ID가 부여되었습니다 (${playerId.slice(0, 6)})`);
-      this.state.highlights = { clips: [], summary: null, stats: [] };
+      const favorites = this.state.highlights?.favorites || [];
+      this.state.highlights = { clips: [], summary: null, stats: [], favorites };
       this.ui.renderHighlights();
       if (this.state.audioEnabled) this.audio.playBgm();
     });
@@ -88,14 +89,16 @@ export class NetworkController {
       } else {
         this.ui.notify('게임이 종료되었습니다.', 'info');
       }
+      const favorites = this.state.highlights?.favorites || [];
       if (highlights) {
         this.state.highlights = {
           clips: Array.isArray(highlights.clips) ? highlights.clips : [],
           summary: highlights.summary || null,
-          stats: Array.isArray(highlights.stats) ? highlights.stats : []
+          stats: Array.isArray(highlights.stats) ? highlights.stats : [],
+          favorites
         };
       } else {
-        this.state.highlights = { clips: [], summary: null, stats: [] };
+        this.state.highlights = { clips: [], summary: null, stats: [], favorites };
       }
       this.ui.renderHighlights();
       if (Array.isArray(achievements)) {
@@ -147,7 +150,8 @@ export class NetworkController {
     this.ui.updateHud();
 
     if (prevState && gameState.round !== prevState.round && gameState.phase === 'running') {
-      this.state.highlights = { clips: [], summary: null, stats: [] };
+      const favorites = this.state.highlights?.favorites || [];
+      this.state.highlights = { clips: [], summary: null, stats: [], favorites };
       this.ui.renderHighlights();
       this.state.achievements = [];
       this.ui.renderAchievements();

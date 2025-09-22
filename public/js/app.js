@@ -5,11 +5,13 @@ import { UIManager } from './core/ui.js';
 import { InputManager } from './core/input.js';
 import { Renderer } from './core/renderer.js';
 import { NetworkController } from './core/network.js';
+import { HighlightLibrary } from './core/highlights.js';
 
 const socket = io({ transports: ['websocket'] });
 
 const audio = new AudioManager(state);
-const ui = new UIManager({ state, elements, socket, audio });
+const highlightLibrary = new HighlightLibrary();
+const ui = new UIManager({ state, elements, socket, audio, highlightLibrary });
 const renderer = new Renderer({ state, elements });
 const input = new InputManager({ state, socket, elements });
 const network = new NetworkController({ state, socket, ui, audio, renderer });

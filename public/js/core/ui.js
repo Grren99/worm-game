@@ -28,11 +28,12 @@ const escapeHtml = (value) =>
   String(value ?? '').replace(/[&<>"']/g, (char) => ESCAPE_MAP[char] || char);
 
 export class UIManager {
-  constructor({ state, elements, socket, audio }) {
+  constructor({ state, elements, socket, audio, highlightLibrary }) {
     this.state = state;
     this.elements = elements;
     this.socket = socket;
     this.audio = audio;
+    this.highlightLibrary = highlightLibrary || null;
     this.statsInterval = null;
   }
 
@@ -41,6 +42,7 @@ export class UIManager {
     this.renderColorPalette();
     this.updateModeIndicator();
     this.attachEventListeners();
+    this.restoreHighlightFavorites();
     this.renderHighlights();
     this.renderAchievements();
     this.fetchStats();
@@ -432,11 +434,40 @@ export class UIManager {
     this.elements.chatLog.scrollTop = this.elements.chatLog.scrollHeight;
   }
 
+  restoreHighlightFavorites() {
+    if (this.highlightLibrary) {
+      this.state.highlights.favorites = this.highlightLibrary.list();
+    } else {
+      this.state.highlights.favorites = [];
+    }
+    this.renderFavoriteHighlights();
+  }
+
+  syncHighlightFavorites() {
+    if (this.highlightLibrary) {
+      this.state.highlights.favorites = this.highlightLibrary.list();
+    } else {
+      this.state.highlights.favorites = [];
+    }
+    this.renderFavoriteHighlights();
+  }
+
+  getClipById(id) {
+    if (!id) return null;
+    const clips = this.state.highlights?.clips || [];
+    const clip = clips.find((entry) => entry.id === id);
+    if (clip) return clip;
+    return this.highlightLibrary?.get(id) || null;
+  }
+
   renderHighlights() {
     if (!this.elements.highlightList || !this.elements.highlightSummary) return;
     const data = this.state.highlights || {};
     const clips = Array.isArray(data.clips) ? data.clips : [];
     const summary = data.summary || null;
+    const favorites = new Set((this.state.highlights?.favorites || []).map((entry) => entry.id));
+
+    this.renderFavoriteHighlights();
 
     if (!summary) {
       this.elements.highlightSummary.textContent = '하이라이트 데이터를 기다리는 중...';
@@ -465,22 +496,258 @@ export class UIManager {
     }
 
     this.elements.highlightList.innerHTML = clips
-      .map(
-        (clip, index) => `
+      .map((clip, index) => {
+        const isFavorite = favorites.has(clip.id);
+        return `
         <li>
-          <button type="button" data-highlight="${index}">
-            <span class="title">${clip.title || '하이라이트'}</span>
-            <span class="subtitle">${clip.subtitle || ''}</span>
-          </button>
+          <div class="highlight-card" data-highlight-id="${clip.id}">
+            <button type="button" class="highlight-card__body" data-action="play" data-index="${index}">
+              <span class="title">${clip.title || '하이라이트'}</span>
+              <span class="subtitle">${clip.subtitle || ''}</span>
+            </button>
+            <div class="highlight-card__actions">
+              <button
+                type="button"
+                class="highlight-card__action highlight-card__action--favorite${isFavorite ? ' is-active' : ''}"
+                data-action="favorite"
+                data-highlight-id="${clip.id}"
+                aria-pressed="${isFavorite ? 'true' : 'false'}"
+                title="${isFavorite ? '즐겨찾기 해제' : '즐겨찾기 추가'}"
+              >${isFavorite ? '★' : '☆'}</button>
+              <button
+                type="button"
+                class="highlight-card__action"
+                data-action="share"
+                data-highlight-id="${clip.id}"
+                title="클립 정보 공유"
+              >🔗</button>
+              <button
+                type="button"
+                class="highlight-card__action"
+                data-action="export"
+                data-highlight-id="${clip.id}"
+                title="클립 JSON 다운로드"
+              >⬇️</button>
+            </div>
+          </div>
+        </li>`;
+      })
+      .join('');
+
+    this.elements.highlightList.querySelectorAll('[data-action="play"]').forEach((button) => {
+      button.addEventListener('click', () => {
+        const index = Number.parseInt(button.dataset.index, 10);
+        if (Number.isNaN(index)) {
+          this.notify('하이라이트를 찾을 수 없습니다.', 'warn');
+          return;
+        }
+        const clip = clips[index];
+        this.playHighlightClip(clip);
+      });
+    });
+
+    this.elements.highlightList.querySelectorAll('[data-action="favorite"]').forEach((button) => {
+      button.addEventListener('click', () => {
+        const id = button.dataset.highlightId;
+        this.toggleHighlightFavorite(id);
+      });
+    });
+
+    this.elements.highlightList.querySelectorAll('[data-action="share"]').forEach((button) => {
+      button.addEventListener('click', () => {
+        const id = button.dataset.highlightId;
+        this.shareHighlightClip(id);
+      });
+    });
+
+    this.elements.highlightList.querySelectorAll('[data-action="export"]').forEach((button) => {
+      button.addEventListener('click', () => {
+        const id = button.dataset.highlightId;
+        this.exportHighlightClip(id);
+      });
+    });
+  }
+
+  renderFavoriteHighlights() {
+    const list = this.elements.favoriteHighlightList;
+    if (!list) return;
+    const favorites = Array.isArray(this.state.highlights?.favorites) ? this.state.highlights.favorites : [];
+    if (!favorites.length) {
+      list.innerHTML = '<li class="empty">즐겨찾은 클립이 없습니다.</li>';
+      return;
+    }
+    list.innerHTML = favorites
+      .map(
+        (clip) => `
+        <li>
+          <div class="highlight-card" data-highlight-id="${clip.id}">
+            <button type="button" class="highlight-card__body" data-action="play" data-highlight-id="${clip.id}">
+              <span class="title">${clip.title || '하이라이트'}</span>
+              <span class="subtitle">${clip.subtitle || ''}</span>
+            </button>
+            <div class="highlight-card__actions">
+              <button
+                type="button"
+                class="highlight-card__action highlight-card__action--favorite is-active"
+                data-action="favorite"
+                data-highlight-id="${clip.id}"
+                aria-pressed="true"
+                title="즐겨찾기 해제"
+              >★</button>
+              <button
+                type="button"
+                class="highlight-card__action"
+                data-action="share"
+                data-highlight-id="${clip.id}"
+                title="클립 정보 공유"
+              >🔗</button>
+              <button
+                type="button"
+                class="highlight-card__action"
+                data-action="export"
+                data-highlight-id="${clip.id}"
+                title="클립 JSON 다운로드"
+              >⬇️</button>
+            </div>
+          </div>
         </li>`
       )
       .join('');
-    this.elements.highlightList.querySelectorAll('button[data-highlight]').forEach((button) => {
+
+    list.querySelectorAll('[data-action="play"]').forEach((button) => {
       button.addEventListener('click', () => {
-        const index = Number.parseInt(button.dataset.highlight, 10);
-        this.playHighlightClip(Number.isNaN(index) ? -1 : index);
+        const id = button.dataset.highlightId;
+        this.playFavoriteHighlight(id);
       });
     });
+
+    list.querySelectorAll('[data-action="favorite"]').forEach((button) => {
+      button.addEventListener('click', () => {
+        const id = button.dataset.highlightId;
+        this.toggleHighlightFavorite(id);
+      });
+    });
+
+    list.querySelectorAll('[data-action="share"]').forEach((button) => {
+      button.addEventListener('click', () => {
+        const id = button.dataset.highlightId;
+        this.shareHighlightClip(id);
+      });
+    });
+
+    list.querySelectorAll('[data-action="export"]').forEach((button) => {
+      button.addEventListener('click', () => {
+        const id = button.dataset.highlightId;
+        this.exportHighlightClip(id);
+      });
+    });
+  }
+
+  toggleHighlightFavorite(id) {
+    if (!id) return;
+    if (!this.highlightLibrary) {
+      this.notify('현재 브라우저에서는 즐겨찾기를 사용할 수 없습니다.', 'warn');
+      return;
+    }
+    if (this.highlightLibrary.has(id)) {
+      this.highlightLibrary.remove(id);
+      this.notify('즐겨찾기에서 제거했습니다.');
+    } else {
+      const clip = this.getClipById(id);
+      if (!clip || !Array.isArray(clip.frames) || !clip.frames.length) {
+        this.notify('하이라이트 데이터를 찾을 수 없습니다.', 'warn');
+        return;
+      }
+      this.highlightLibrary.add(clip);
+      this.notify('즐겨찾기에 추가했습니다.', 'success');
+    }
+    this.syncHighlightFavorites();
+    this.renderHighlights();
+  }
+
+  async shareHighlightClip(id) {
+    const clip = this.getClipById(id);
+    if (!clip) {
+      this.notify('하이라이트 정보를 찾을 수 없습니다.', 'warn');
+      return;
+    }
+    const date = clip.timestamp ? new Date(clip.timestamp) : new Date();
+    const lines = [
+      '🐛 온라인 지렁이 배틀 하이라이트 공유!',
+      `• 제목: ${clip.title || '하이라이트'}`,
+      clip.subtitle ? `• 설명: ${clip.subtitle}` : null,
+      typeof clip.round === 'number' ? `• 라운드: ${clip.round}` : null,
+      `• 기록: ${date.toLocaleString()}`
+    ].filter(Boolean);
+    const shareText = lines.join('\n');
+    try {
+      if (navigator?.clipboard?.writeText) {
+        await navigator.clipboard.writeText(shareText);
+        this.notify('하이라이트 정보를 클립보드에 복사했습니다.', 'success');
+        return;
+      }
+    } catch (error) {
+      // fall through to fallback
+    }
+    const fallback = window.prompt('다음 내용을 복사하세요.', shareText);
+    if (fallback !== null) {
+      this.notify('하이라이트 정보를 복사했습니다.');
+    }
+  }
+
+  exportHighlightClip(id) {
+    const clip = this.getClipById(id);
+    if (!clip || !Array.isArray(clip.frames) || !clip.frames.length) {
+      this.notify('내보낼 하이라이트 데이터를 찾을 수 없습니다.', 'warn');
+      return;
+    }
+    const payload = {
+      version: '1.0.0',
+      exportedAt: Date.now(),
+      clip: {
+        id: clip.id,
+        title: clip.title || '하이라이트',
+        subtitle: clip.subtitle || '',
+        round: clip.round || null,
+        timestamp: clip.timestamp || Date.now(),
+        meta: clip.meta || null,
+        frames: clip.frames
+      }
+    };
+    const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const anchor = document.createElement('a');
+    anchor.href = url;
+    anchor.download = `worm-highlight-${clip.id?.slice(0, 8) || 'clip'}.json`;
+    document.body.appendChild(anchor);
+    anchor.click();
+    document.body.removeChild(anchor);
+    URL.revokeObjectURL(url);
+    this.notify('하이라이트 클립을 JSON으로 내보냈습니다.');
+  }
+
+  playFavoriteHighlight(id) {
+    if (!id) return;
+    const clip = this.highlightLibrary?.get(id);
+    if (!clip) {
+      this.notify('즐겨찾기 데이터를 찾을 수 없습니다.', 'warn');
+      this.syncHighlightFavorites();
+      this.renderHighlights();
+      return;
+    }
+    this.playHighlightClip(clip);
+  }
+
+  handleClearFavoriteRequest() {
+    if (!this.highlightLibrary || !this.highlightLibrary.list().length) {
+      return;
+    }
+    const confirmed = window.confirm('즐겨찾은 하이라이트를 모두 삭제할까요?');
+    if (!confirmed) return;
+    this.highlightLibrary.clear();
+    this.syncHighlightFavorites();
+    this.renderHighlights();
+    this.notify('즐겨찾은 하이라이트를 비웠습니다.');
   }
 
   renderAchievements() {
@@ -517,9 +784,11 @@ export class UIManager {
       .join('');
   }
 
-  playHighlightClip(index) {
-    const clips = this.state.highlights?.clips || [];
-    const clip = clips[index];
+  playHighlightClip(target) {
+    const clip =
+      typeof target === 'number'
+        ? (this.state.highlights?.clips || [])[target]
+        : target;
     if (!clip || !Array.isArray(clip.frames) || !clip.frames.length) {
       this.notify('하이라이트 데이터를 불러올 수 없습니다.', 'warn');
       return;
@@ -649,6 +918,12 @@ export class UIManager {
       this.elements.refreshRooms.addEventListener('click', () => {
         this.socket.emit('rooms:refresh');
       });
+    }
+
+    if (this.elements.clearHighlightFavorites) {
+      this.elements.clearHighlightFavorites.addEventListener('click', () =>
+        this.handleClearFavoriteRequest()
+      );
     }
 
     if (this.elements.replayButton) {

@@ -38,6 +38,8 @@ export const elements = {
   tournamentTimer: document.getElementById('tournament-timer'),
   highlightSummary: document.getElementById('highlight-summary'),
   highlightList: document.getElementById('tournament-highlights'),
+  favoriteHighlightList: document.getElementById('favorite-highlights'),
+  clearHighlightFavorites: document.getElementById('clear-highlight-favorites'),
   achievementList: document.getElementById('achievement-list'),
   modeIndicator: document.getElementById('mode-indicator'),
   worldInfo: document.getElementById('world-info'),
