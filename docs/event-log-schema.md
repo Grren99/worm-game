@@ -102,3 +102,17 @@ UI 이벤트 피드에 사용되는 핵심 문자열입니다.
 - `{ "participants.killer.id": 1, timestamp: -1 }`
 
 필요에 따라 TTL 인덱스 또는 별도 아카이브 컬렉션으로 이전할 수 있습니다.
+
+## API 필터 예시
+- `/api/event-logs?type=kill&limit=10` : 최신 10개의 킬 이벤트
+- `/api/event-logs?type=powerup,golden-food&playerName=레드` : 레드 플레이어가 관여한 파워업/골든 이벤트
+- `/api/event-logs?roomId=AB12CD&before=2025-09-23T11:50:00.000Z` : 특정 방에서 타임라인 커서 이전 이벤트
+- `/api/event-logs?tag=highlight,my-play&highlight=true` : 하이라이트 태그와 내 플레이 태그가 모두 걸린 항목
+- `/api/event-logs?search=골든&limit=5` : 메시지/세부 정보에 "골든"이 포함된 최근 5건
+
+## 운영 & TTL 전략
+- **핫 데이터(최근 7일)** : 기본 컬렉션(`event_logs`)에는 TTL 인덱스를 적용하지 않고, 쿼리 성능 확보를 위해 복합 인덱스만 유지합니다.
+- **웜 데이터(7~30일)** : 30일 TTL 인덱스(`expireAfterSeconds: 2592000`)를 걸어 자동 만료시키되, TTL 만료 전에 아카이브 워커가 `event_logs_archive` 컬렉션으로 이전합니다.
+- **콜드 데이터(30일 이후)** : 아카이브 컬렉션은 주기적으로 BSON dump 또는 Object Storage(JSONL)로 이전하여 저비용 보관을 유지합니다.
+- **아카이브 워커 제안** : 10분 간격 CRON으로 `context.mode`, `type`, `timestamp` 기준 배치 이동, 오류 발생 시 재시도 큐에 적재합니다.
+- **복구 절차** : 아카이브에서 특정 기간을 재주입할 때는 `eventId` 중복을 허용하지 않도록 `upsert` 후, 필요 시 `roomId`+`timestamp` 필터로 부분 복구합니다.

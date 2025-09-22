@@ -12,6 +12,7 @@ import {
 } from './state.js';
 import { recommendClips } from './highlightRecommender.js';
 import { validateHighlightClip } from './highlightValidator.js';
+import { EventFeedView } from './eventFeed.js';
 
 const ROOM_PHASE_LABEL = {
   waiting: '대기중',
@@ -77,19 +78,25 @@ export class UIManager {
     this.statsInterval = null;
     this.audioStorageWarning = { load: false, save: false };
     this.accessibilityStorageWarning = { load: false, save: false };
-    this.eventFeedHighlights = new Map();
-    this.eventFeedPulseTimeout = null;
-    this.eventHighlightClearTimeout = null;
-    this.eventFeedStorageWarning = { load: false, save: false };
+    this.eventFeed = new EventFeedView({
+      state,
+      elements,
+      notify: (message, type) => this.notify(message, type),
+      getLabel: (type) => this.getEventFeedLabel(type),
+      onFiltersChange: () => {
+        this.renderEventFeed();
+        this.renderEventFeedFilters();
+      }
+    });
   }
 
   init() {
     this.populateModeOptions();
     this.renderColorPalette();
     this.updateModeIndicator();
+    this.eventFeed.init();
     this.restoreAudioSettings();
     this.restoreAccessibilityOptions();
-    this.restoreEventFeedPreferences();
     this.attachEventListeners();
     this.restoreHighlightFavorites();
     this.renderHighlights();
@@ -189,74 +196,19 @@ export class UIManager {
   }
 
   cleanupExpiredEventHighlights() {
-    if (!this.eventFeedHighlights?.size) return;
-    const now = Date.now();
-    for (const [id, expiry] of this.eventFeedHighlights.entries()) {
-      if (!Number.isFinite(expiry) || expiry <= now) {
-        this.eventFeedHighlights.delete(id);
-      }
-    }
+    this.eventFeed.cleanupExpiredHighlights();
   }
 
   registerEventFeedEvents(events = []) {
-    if (!Array.isArray(events) || !events.length) return;
-    const visibleEvents = events.filter((event) => this.isEventFeedTypeEnabled(event));
-    if (!visibleEvents.length) return;
-    if (!this.eventFeedHighlights) this.eventFeedHighlights = new Map();
-    this.cleanupExpiredEventHighlights();
-    const now = Date.now();
-    const expireAt = now + 1600;
-    visibleEvents.forEach((event, index) => {
-      if (!event) return;
-      const rawId = event.id ?? `${now}-${index}-${Math.random().toString(16).slice(2)}`;
-      const id = String(rawId);
-      this.eventFeedHighlights.set(id, expireAt);
-    });
-    if (this.elements.eventFeed) {
-      this.elements.eventFeed.classList.add('event-feed--pulse');
-      if (this.eventFeedPulseTimeout) {
-        window.clearTimeout(this.eventFeedPulseTimeout);
-      }
-      this.eventFeedPulseTimeout = window.setTimeout(() => {
-        this.elements.eventFeed.classList.remove('event-feed--pulse');
-        this.eventFeedPulseTimeout = null;
-      }, 520);
-    }
-    if (this.eventHighlightClearTimeout) {
-      window.clearTimeout(this.eventHighlightClearTimeout);
-    }
-    this.eventHighlightClearTimeout = window.setTimeout(() => {
-      this.eventFeedHighlights.clear();
-      this.eventHighlightClearTimeout = null;
-    }, 2000);
+    this.eventFeed.handleEvents(events);
   }
 
   shouldHighlightEvent(event) {
-    if (!event) return false;
-    if (!this.eventFeedHighlights?.size) return false;
-    const id = event.id != null ? String(event.id) : null;
-    if (!id) return false;
-    const expiry = this.eventFeedHighlights.get(id);
-    if (!Number.isFinite(expiry)) {
-      this.eventFeedHighlights.delete(id);
-      return false;
-    }
-    const now = Date.now();
-    if (expiry <= now) {
-      this.eventFeedHighlights.delete(id);
-      return false;
-    }
-    return true;
+    return this.eventFeed.shouldHighlight(event);
   }
 
   isEventFeedTypeEnabled(event) {
-    const eventFeed = this.ensureEventFeedPreferences();
-    const type = typeof event === 'string' ? event : event?.type;
-    if (!type) return true;
-    if (Object.prototype.hasOwnProperty.call(eventFeed.filters, type)) {
-      return Boolean(eventFeed.filters[type]);
-    }
-    return true;
+    return this.eventFeed.isTypeEnabled(event);
   }
 
   populateModeOptions() {
@@ -338,25 +290,7 @@ export class UIManager {
   }
 
   ensureEventFeedPreferences() {
-    if (!this.state.preferences || typeof this.state.preferences !== 'object') {
-      this.state.preferences = {};
-    }
-    if (!this.state.preferences.eventFeed || typeof this.state.preferences.eventFeed !== 'object') {
-      this.state.preferences.eventFeed = {
-        filters: createEventFeedToggleDefaults()
-      };
-    }
-    const eventFeed = this.state.preferences.eventFeed;
-    if (!eventFeed.filters || typeof eventFeed.filters !== 'object') {
-      eventFeed.filters = createEventFeedToggleDefaults();
-    } else {
-      EVENT_FEED_TYPES.forEach(({ key }) => {
-        if (typeof eventFeed.filters[key] !== 'boolean') {
-          eventFeed.filters[key] = true;
-        }
-      });
-    }
-    return eventFeed;
+    return this.eventFeed.ensurePreferences();
   }
 
   renderAudioSettings() {
@@ -378,24 +312,16 @@ export class UIManager {
   }
 
   renderEventFeedFilters() {
-    const eventFeed = this.ensureEventFeedPreferences();
-    const audioSettings = this.ensureEventCueSettings();
-    if (Array.isArray(this.elements.eventFilterCheckboxes)) {
-      this.elements.eventFilterCheckboxes.forEach((input) => {
-        if (!input || !input.dataset) return;
-        const key = input.dataset.eventFilter;
-        if (!key) return;
-        const enabled = eventFeed.filters?.[key] !== false;
-        input.checked = enabled;
-      });
+    if (this.eventFeed) {
+      this.eventFeed.syncFilterControls();
     }
+    const audioSettings = this.ensureEventCueSettings();
     if (Array.isArray(this.elements.eventSoundCheckboxes)) {
       this.elements.eventSoundCheckboxes.forEach((input) => {
         if (!input || !input.dataset) return;
         const key = input.dataset.eventSound;
         if (!key) return;
-        const enabled = audioSettings.eventCueTypes?.[key] !== false;
-        input.checked = enabled;
+        input.checked = audioSettings.eventCueTypes?.[key] !== false;
       });
     }
   }
@@ -462,47 +388,6 @@ export class UIManager {
     }
     this.renderAudioSettings();
     this.renderEventFeedFilters();
-  }
-
-  persistEventFeedPreferences() {
-    const eventFeed = this.ensureEventFeedPreferences();
-    const serializedFilters = {};
-    EVENT_FEED_TYPES.forEach(({ key }) => {
-      serializedFilters[key] = eventFeed.filters?.[key] !== false;
-    });
-    eventFeed.filters = { ...serializedFilters };
-    try {
-      localStorage.setItem('owb.event-feed', JSON.stringify({ filters: serializedFilters }));
-    } catch (error) {
-      if (!this.eventFeedStorageWarning.save) {
-        console.warn('이벤트 피드 설정 저장 실패:', error);
-        this.eventFeedStorageWarning.save = true;
-      }
-    }
-  }
-
-  restoreEventFeedPreferences() {
-    const eventFeed = this.ensureEventFeedPreferences();
-    try {
-      const stored = localStorage.getItem('owb.event-feed');
-      if (stored) {
-        const parsed = JSON.parse(stored);
-        if (parsed && typeof parsed.filters === 'object') {
-          EVENT_FEED_TYPES.forEach(({ key }) => {
-            if (typeof parsed.filters[key] === 'boolean') {
-              eventFeed.filters[key] = Boolean(parsed.filters[key]);
-            }
-          });
-        }
-      }
-    } catch (error) {
-      if (!this.eventFeedStorageWarning.load) {
-        console.warn('이벤트 피드 설정 불러오기 실패:', error);
-        this.eventFeedStorageWarning.load = true;
-      }
-    }
-    this.renderEventFeedFilters();
-    this.renderEventFeed();
   }
 
   ensureAccessibilityPreferences() {
@@ -603,24 +488,6 @@ export class UIManager {
       this.audio.setEventCueVolume(clamped);
     }
     this.persistAudioSettings();
-  }
-
-  toggleEventFeedFilter(type, enabled) {
-    if (!type) return;
-    const eventFeed = this.ensureEventFeedPreferences();
-    const next = Boolean(enabled);
-    if (eventFeed.filters[type] === next) return;
-    eventFeed.filters[type] = next;
-    this.persistEventFeedPreferences();
-    this.renderEventFeed();
-    this.renderEventFeedFilters();
-    const label = this.getEventFeedLabel(type);
-    this.notify(
-      eventFeed.filters[type]
-        ? `${label} 이벤트를 피드에 표시합니다.`
-        : `${label} 이벤트를 피드에서 숨깁니다.`,
-      'info'
-    );
   }
 
   toggleEventCueType(type, enabled) {
@@ -2496,16 +2363,6 @@ export class UIManager {
       this.elements.eventCueVolume.addEventListener('input', (event) => {
         const raw = Number(event.target.value);
         this.updateEventCueVolume(raw / 100);
-      });
-    }
-
-    if (Array.isArray(this.elements.eventFilterCheckboxes)) {
-      this.elements.eventFilterCheckboxes.forEach((input) => {
-        input.addEventListener('change', (event) => {
-          const checkbox = event.currentTarget;
-          if (!checkbox?.dataset?.eventFilter) return;
-          this.toggleEventFeedFilter(checkbox.dataset.eventFilter, checkbox.checked);
-        });
       });
     }
 
