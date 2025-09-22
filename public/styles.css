@@ -378,6 +378,140 @@ input:focus {
   pointer-events: auto;
 }
 
+.spectator-panel {
+  position: absolute;
+  top: 16px;
+  right: 16px;
+  width: 320px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 14px;
+  border-radius: 14px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: rgba(9, 12, 18, 0.85);
+  backdrop-filter: blur(10px);
+  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.35);
+}
+
+.spectator-panel.is-hidden {
+  display: none;
+}
+
+.spectator-panel__header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 12px;
+}
+
+.spectator-panel__title {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.spectator-panel__title span {
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.spectator-panel__title small {
+  color: var(--text-muted);
+  font-size: 12px;
+}
+
+.spectator-panel__controls {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.spectator-panel__targets {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+  gap: 8px;
+}
+
+.spectator-panel__targets button {
+  width: 100%;
+  padding: 8px 10px;
+  border-radius: 10px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: rgba(255, 255, 255, 0.04);
+  color: inherit;
+  font-size: 12px;
+  text-align: left;
+  cursor: pointer;
+  transition: border-color 0.2s ease, background 0.2s ease, transform 0.2s ease;
+}
+
+.spectator-panel__targets button:hover {
+  border-color: rgba(255, 255, 255, 0.25);
+  background: rgba(255, 255, 255, 0.08);
+  transform: translateY(-1px);
+}
+
+.spectator-panel__targets button.is-active {
+  border-color: rgba(64, 169, 255, 0.8);
+  background: rgba(64, 169, 255, 0.16);
+}
+
+.spectator-panel__targets button strong {
+  display: block;
+  font-weight: 600;
+}
+
+.spectator-panel__targets button span {
+  display: block;
+  margin-top: 2px;
+  color: var(--text-muted);
+  font-size: 11px;
+}
+
+.spectator-panel__cameras {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  gap: 10px;
+}
+
+.spectator-camera {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 10px;
+  border-radius: 12px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: rgba(0, 0, 0, 0.35);
+}
+
+.spectator-camera canvas {
+  width: 100%;
+  aspect-ratio: 16 / 10;
+  border-radius: 8px;
+  background: rgba(0, 0, 0, 0.65);
+}
+
+.spectator-camera__meta {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-size: 12px;
+  color: var(--text-muted);
+}
+
+.spectator-camera__meta strong {
+  font-size: 13px;
+  color: var(--text);
+}
+
+.spectator-panel .empty {
+  padding: 6px 0;
+  text-align: center;
+  color: var(--text-muted);
+  font-size: 12px;
+}
+
 .mobile-controls__hint {
   font-size: 12px;
   color: var(--text-muted);

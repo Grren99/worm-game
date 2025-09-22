@@ -54,6 +54,13 @@ export const elements = {
   overlay: document.getElementById('game-overlay'),
   countdown: document.getElementById('countdown'),
   canvas: document.getElementById('game-canvas'),
+  spectatorPanel: document.getElementById('spectator-panel'),
+  spectatorStatus: document.getElementById('spectator-status'),
+  spectatorTargets: document.getElementById('spectator-targets'),
+  spectatorPrev: document.getElementById('spectator-prev'),
+  spectatorNext: document.getElementById('spectator-next'),
+  spectatorLock: document.getElementById('spectator-lock'),
+  spectatorCameras: document.getElementById('spectator-cameras'),
   mobileControls: document.getElementById('mobile-controls'),
   mobileStick: document.getElementById('mobile-stick'),
   mobileStickHandle: document.getElementById('mobile-stick-handle')
@@ -68,3 +75,5 @@ elements.highlightTagButtons = [
 elements.canvasContext = elements.canvas?.getContext('2d') || null;
 
 elements.replayContext = elements.replayCanvas?.getContext('2d') || null;
+
+elements.spectatorCameraContexts = new Map();

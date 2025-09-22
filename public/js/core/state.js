@@ -81,6 +81,14 @@ export const initialState = () => ({
     lastScore: 0,
     alive: true,
     profile: null
+  },
+  spectator: {
+    active: false,
+    focusId: null,
+    cameraIds: [],
+    locked: false,
+    maxCameras: 3,
+    cameraZoom: 2.4
   }
 });
 

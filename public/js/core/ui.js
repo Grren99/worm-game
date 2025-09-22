@@ -378,6 +378,198 @@ export class UIManager {
     }
   }
 
+  getAlivePlayers() {
+    if (!Array.isArray(this.state.game?.players)) return [];
+    return this.state.game.players.filter((player) => player.alive);
+  }
+
+  getSpectatorOrder(alivePlayers = this.getAlivePlayers()) {
+    const aliveMap = new Map(alivePlayers.map((player) => [player.id, player]));
+    const leaderboard = Array.isArray(this.state.game?.leaderboard) ? this.state.game.leaderboard : [];
+    const ordered = [];
+    leaderboard.forEach((entry) => {
+      const player = aliveMap.get(entry.id);
+      if (player) ordered.push(player);
+    });
+    alivePlayers.forEach((player) => {
+      if (!ordered.find((existing) => existing.id === player.id)) {
+        ordered.push(player);
+      }
+    });
+    return ordered;
+  }
+
+  updateSpectatorLockIndicator() {
+    if (!this.elements.spectatorLock) return;
+    const locked = Boolean(this.state.spectator?.locked);
+    this.elements.spectatorLock.textContent = locked ? '자동 추적 해제' : '자동 추적';
+    this.elements.spectatorLock.setAttribute('aria-pressed', locked ? 'true' : 'false');
+  }
+
+  renderSpectatorHud() {
+    if (!this.elements.spectatorPanel) return;
+    const spectator = this.state.spectator;
+    if (!spectator?.active) {
+      this.elements.spectatorPanel.classList.add('is-hidden');
+      if (this.elements.spectatorStatus) {
+        this.elements.spectatorStatus.textContent = '관전 대상 없음';
+      }
+      if (this.elements.spectatorTargets) {
+        this.elements.spectatorTargets.innerHTML = '<p class="empty">관전 가능한 플레이어가 없습니다.</p>';
+      }
+      if (this.elements.spectatorCameras) {
+        this.elements.spectatorCameras.innerHTML =
+          '<div class="empty">관전 가능한 지렁이를 기다리는 중...</div>';
+      }
+      if (this.elements.spectatorCameraContexts) {
+        this.elements.spectatorCameraContexts = new Map();
+      }
+      this.updateSpectatorLockIndicator();
+      return;
+    }
+
+    this.elements.spectatorPanel.classList.remove('is-hidden');
+    const alivePlayers = this.getAlivePlayers();
+    const focus = alivePlayers.find((player) => player.id === spectator.focusId) || null;
+    if (this.elements.spectatorStatus) {
+      if (focus) {
+        const kills = focus.kills || 0;
+        this.elements.spectatorStatus.textContent = `${focus.name} · ${focus.score}점 · ${kills}킬`;
+      } else {
+        this.elements.spectatorStatus.textContent = '관전 대상 선택 필요';
+      }
+    }
+
+    this.renderSpectatorTargets(alivePlayers);
+    this.renderSpectatorCameras(alivePlayers);
+    this.updateSpectatorLockIndicator();
+  }
+
+  renderSpectatorTargets(alivePlayers) {
+    if (!this.elements.spectatorTargets) return;
+    if (!alivePlayers.length) {
+      this.elements.spectatorTargets.innerHTML =
+        '<p class="empty">관전 가능한 플레이어가 없습니다.</p>';
+      return;
+    }
+    const spectator = this.state.spectator;
+    const order = this.getSpectatorOrder(alivePlayers);
+    const markup = order
+      .map((player) => {
+        const active = spectator.focusId === player.id;
+        const kills = player.kills || 0;
+        return `
+        <button type="button" data-focus="${player.id}" class="${active ? 'is-active' : ''}">
+          <strong>${escapeHtml(player.name)}</strong>
+          <span>${player.score}점 · ${kills}킬</span>
+        </button>`;
+      })
+      .join('');
+    this.elements.spectatorTargets.innerHTML = markup;
+  }
+
+  renderSpectatorCameras(alivePlayers) {
+    if (!this.elements.spectatorCameras) return;
+    const spectator = this.state.spectator;
+    const cameraIds = Array.isArray(spectator?.cameraIds) ? spectator.cameraIds : [];
+    if (!cameraIds.length) {
+      this.elements.spectatorCameras.innerHTML =
+        '<div class="empty">관전 가능한 지렁이를 기다리는 중...</div>';
+      this.elements.spectatorCameraContexts = new Map();
+      return;
+    }
+    const aliveMap = new Map(alivePlayers.map((player) => [player.id, player]));
+    const fragments = cameraIds
+      .map((playerId) => {
+        const player = aliveMap.get(playerId);
+        if (!player) return '';
+        const kills = player.kills || 0;
+        return `
+        <div class="spectator-camera" data-player-id="${player.id}">
+          <canvas width="240" height="150"></canvas>
+          <div class="spectator-camera__meta">
+            <strong>${escapeHtml(player.name)}</strong>
+            <span>${player.score}점 · ${kills}킬</span>
+          </div>
+        </div>`;
+      })
+      .filter(Boolean)
+      .join('');
+
+    if (!fragments) {
+      this.elements.spectatorCameras.innerHTML =
+        '<div class="empty">관전 가능한 지렁이를 기다리는 중...</div>';
+      this.elements.spectatorCameraContexts = new Map();
+      return;
+    }
+
+    this.elements.spectatorCameras.innerHTML = fragments;
+    const contexts = new Map();
+    this.elements.spectatorCameras.querySelectorAll('.spectator-camera').forEach((wrapper) => {
+      const playerId = wrapper.dataset.playerId;
+      const canvas = wrapper.querySelector('canvas');
+      if (!playerId || !canvas) return;
+      const ctx = canvas.getContext('2d');
+      if (ctx) contexts.set(playerId, ctx);
+    });
+    this.elements.spectatorCameraContexts = contexts;
+  }
+
+  cycleSpectatorFocus(direction = 1) {
+    const spectator = this.state.spectator;
+    if (!spectator?.active) return;
+    const alivePlayers = this.getAlivePlayers();
+    if (!alivePlayers.length) return;
+    const order = this.getSpectatorOrder(alivePlayers);
+    if (!order.length) return;
+    const currentIndex = order.findIndex((player) => player.id === spectator.focusId);
+    const nextIndex = currentIndex === -1 ? 0 : (currentIndex + direction + order.length) % order.length;
+    const target = order[nextIndex];
+    if (target) {
+      this.setSpectatorFocus(target.id, { lock: true });
+    }
+  }
+
+  setSpectatorFocus(playerId, { lock = true } = {}) {
+    const spectator = this.state.spectator;
+    if (!spectator?.active) return;
+    if (!playerId) return;
+    if (lock) spectator.locked = true;
+    spectator.focusId = playerId;
+    const maxCameras = spectator.maxCameras || 3;
+    const next = [playerId, ...(Array.isArray(spectator.cameraIds) ? spectator.cameraIds : [])];
+    const unique = [];
+    const seen = new Set();
+    next.forEach((id) => {
+      if (!id || seen.has(id)) return;
+      seen.add(id);
+      unique.push(id);
+    });
+    spectator.cameraIds = unique.slice(0, maxCameras);
+    this.renderSpectatorHud();
+  }
+
+  toggleSpectatorLock() {
+    const spectator = this.state.spectator;
+    if (!spectator?.active) return;
+    spectator.locked = !spectator.locked;
+    if (!spectator.locked) {
+      const orderIds = this.getSpectatorOrder().map((player) => player.id);
+      const combined = [spectator.focusId, ...orderIds].filter(Boolean);
+      const unique = [];
+      const seen = new Set();
+      combined.forEach((id) => {
+        if (!id || seen.has(id)) return;
+        seen.add(id);
+        unique.push(id);
+      });
+      spectator.cameraIds = unique.slice(0, spectator.maxCameras || 3);
+    }
+    this.updateSpectatorLockIndicator();
+    this.renderSpectatorHud();
+    this.notify(`관전자 자동 추적이 ${spectator.locked ? '잠금되었습니다.' : '해제되었습니다.'}`, 'info');
+  }
+
   updateCountdown() {
     if (!this.state.game) {
       this.elements.countdown.classList.remove('active');
@@ -401,6 +593,7 @@ export class UIManager {
     this.updateTournamentStatus();
     this.updateModeIndicator();
     this.updateCountdown();
+    this.renderSpectatorHud();
   }
 
   setOverlay(text) {
@@ -1422,6 +1615,26 @@ export class UIManager {
           this.notify('사운드가 비활성화되었습니다.');
         }
       });
+    }
+
+    if (this.elements.spectatorTargets) {
+      this.elements.spectatorTargets.addEventListener('click', (event) => {
+        const button = event.target.closest('button[data-focus]');
+        if (!button) return;
+        this.setSpectatorFocus(button.dataset.focus, { lock: true });
+      });
+    }
+
+    if (this.elements.spectatorPrev) {
+      this.elements.spectatorPrev.addEventListener('click', () => this.cycleSpectatorFocus(-1));
+    }
+
+    if (this.elements.spectatorNext) {
+      this.elements.spectatorNext.addEventListener('click', () => this.cycleSpectatorFocus(1));
+    }
+
+    if (this.elements.spectatorLock) {
+      this.elements.spectatorLock.addEventListener('click', () => this.toggleSpectatorLock());
     }
 
     if (this.elements.nameInput) {

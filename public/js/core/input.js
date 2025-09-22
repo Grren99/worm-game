@@ -9,11 +9,15 @@ const directionKeys = new Map([
   ['KeyD', { x: 1, y: 0 }]
 ]);
 
+const spectatorPrevKeys = new Set(['KeyQ', 'BracketLeft']);
+const spectatorNextKeys = new Set(['KeyE', 'BracketRight']);
+
 export class InputManager {
-  constructor({ state, socket, elements }) {
+  constructor({ state, socket, elements, ui = null }) {
     this.state = state;
     this.socket = socket;
     this.elements = elements;
+    this.ui = ui;
     this.lastDirection = null;
     this.pointerId = null;
     this.stickCenter = { x: 0, y: 0 };
@@ -23,6 +27,18 @@ export class InputManager {
   init() {
     document.addEventListener('keydown', (event) => {
       if (['INPUT', 'TEXTAREA'].includes(event.target.tagName)) return;
+      if (this.state.spectator?.active) {
+        if (spectatorPrevKeys.has(event.code)) {
+          event.preventDefault();
+          this.ui?.cycleSpectatorFocus(-1);
+          return;
+        }
+        if (spectatorNextKeys.has(event.code)) {
+          event.preventDefault();
+          this.ui?.cycleSpectatorFocus(1);
+          return;
+        }
+      }
       const direction = directionKeys.get(event.code);
       if (!direction) return;
       this.sendDirection(direction);

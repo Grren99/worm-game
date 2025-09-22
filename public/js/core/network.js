@@ -163,6 +163,7 @@ export class NetworkController {
     const prevPlayers = buildPlayerMap(prevState?.players);
 
     this.state.game = gameState;
+    this.updateSpectatorState(gameState);
     this.ui.handleGamePhase();
     this.ui.updateHud();
 
@@ -241,5 +242,64 @@ export class NetworkController {
         speed: 140
       });
     });
+  }
+
+  updateSpectatorState(gameState) {
+    const spectator = this.state.spectator;
+    if (!spectator) return;
+
+    const players = Array.isArray(gameState?.players) ? gameState.players : [];
+    const leaderboard = Array.isArray(gameState?.leaderboard) ? gameState.leaderboard : [];
+    const alivePlayers = players.filter((player) => player.alive);
+    const focusCandidates = leaderboard.length
+      ? leaderboard.filter((entry) => alivePlayers.find((player) => player.id === entry.id))
+      : alivePlayers;
+
+    const me = players.find((player) => player.id === this.state.playerId) || null;
+    if (!players.length) {
+      spectator.active = false;
+      spectator.focusId = null;
+      spectator.cameraIds = [];
+      return;
+    }
+
+    spectator.active = (!me || !me.alive) && alivePlayers.length > 0;
+    if (!spectator.active) {
+      spectator.focusId = null;
+      spectator.cameraIds = [];
+      return;
+    }
+
+    const candidateIds = focusCandidates.map((entry) => entry.id);
+    if (!spectator.focusId || !candidateIds.includes(spectator.focusId)) {
+      const fallback = alivePlayers.find((player) => candidateIds.includes(player.id)) || alivePlayers[0];
+      spectator.focusId = fallback?.id || null;
+    }
+
+    const maxCameras = spectator.maxCameras || 3;
+    const unique = (list) => {
+      const seen = new Set();
+      return list.filter((value) => {
+        if (!value) return false;
+        if (seen.has(value)) return false;
+        seen.add(value);
+        return true;
+      });
+    };
+
+    const nextCameraOrder = spectator.locked
+      ? unique(spectator.cameraIds.filter((id) => candidateIds.includes(id)))
+      : unique([spectator.focusId, ...candidateIds]);
+
+    if (!spectator.locked) {
+      spectator.cameraIds = nextCameraOrder.slice(0, maxCameras);
+    } else {
+      const ensured = unique([spectator.focusId, ...nextCameraOrder]);
+      if (ensured.length) {
+        spectator.cameraIds = ensured.slice(0, maxCameras);
+      } else {
+        spectator.cameraIds = spectator.focusId ? [spectator.focusId] : [];
+      }
+    }
   }
 }

@@ -13,7 +13,7 @@ const audio = new AudioManager(state);
 const highlightLibrary = new HighlightLibrary();
 const ui = new UIManager({ state, elements, socket, audio, highlightLibrary });
 const renderer = new Renderer({ state, elements });
-const input = new InputManager({ state, socket, elements });
+const input = new InputManager({ state, socket, elements, ui });
 const network = new NetworkController({ state, socket, ui, audio, renderer });
 
 ui.init();

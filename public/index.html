@@ -111,6 +111,31 @@
               </div>
               <p class="mobile-controls__hint">드래그하여 이동하세요</p>
             </div>
+            <div class="spectator-panel is-hidden" id="spectator-panel">
+              <div class="spectator-panel__header">
+                <div class="spectator-panel__title">
+                  <span>관전자 HUD</span>
+                  <small id="spectator-status">관전 대상 없음</small>
+                </div>
+                <div class="spectator-panel__controls">
+                  <button id="spectator-prev" class="btn btn--ghost btn--tiny" type="button" aria-label="이전 플레이어">
+                    ◀
+                  </button>
+                  <button id="spectator-next" class="btn btn--ghost btn--tiny" type="button" aria-label="다음 플레이어">
+                    ▶
+                  </button>
+                  <button id="spectator-lock" class="btn btn--ghost btn--tiny" type="button" aria-pressed="false">
+                    자동 추적
+                  </button>
+                </div>
+              </div>
+              <div class="spectator-panel__targets" id="spectator-targets">
+                <p class="empty">관전 가능한 플레이어가 없습니다.</p>
+              </div>
+              <div class="spectator-panel__cameras" id="spectator-cameras">
+                <div class="empty">관전 가능한 지렁이를 기다리는 중...</div>
+              </div>
+            </div>
           </div>
           <div class="hud">
             <div class="hud__section">

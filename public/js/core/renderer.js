@@ -85,9 +85,9 @@ export class Renderer {
     return hexColor;
   }
 
-  drawGrid(ctx, width, height, spacing) {
+  drawGrid(ctx, width, height, spacing, lineWidth = 1) {
     ctx.strokeStyle = 'rgba(255,255,255,0.08)';
-    ctx.lineWidth = 1;
+    ctx.lineWidth = lineWidth;
     ctx.beginPath();
     for (let x = spacing / 2; x <= width; x += spacing) {
       ctx.moveTo(x, 0);
@@ -169,6 +169,111 @@ export class Renderer {
     });
   }
 
+  renderScene(ctx, gameState, options = {}) {
+    if (!ctx || !gameState || !this.state.world) return;
+    const world = this.state.world;
+    const {
+      fitWorld = false,
+      focusPlayerId = null,
+      zoom = 1,
+      highlightPlayerId = null,
+      background = '#050510'
+    } = options;
+
+    const canvas = ctx.canvas;
+    if (!canvas) return;
+
+    if (fitWorld && (canvas.width !== world.width || canvas.height !== world.height)) {
+      canvas.width = world.width;
+      canvas.height = world.height;
+    }
+
+    ctx.save();
+    ctx.setTransform(1, 0, 0, 1, 0, 0);
+    ctx.fillStyle = background;
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+    ctx.save();
+
+    if (focusPlayerId && zoom > 1) {
+      const focusPlayer = (gameState.players || []).find((player) => player.id === focusPlayerId);
+      const head = focusPlayer?.segments?.[0];
+      ctx.translate(canvas.width / 2, canvas.height / 2);
+      ctx.scale(zoom, zoom);
+      if (head) {
+        ctx.translate(-head.x, -head.y);
+      } else {
+        ctx.translate(-world.width / 2, -world.height / 2);
+      }
+    } else if (!fitWorld) {
+      const scaleX = canvas.width / world.width;
+      const scaleY = canvas.height / world.height;
+      const scale = Math.min(scaleX, scaleY);
+      const offsetX = (canvas.width - world.width * scale) / 2;
+      const offsetY = (canvas.height - world.height * scale) / 2;
+      ctx.translate(offsetX, offsetY);
+      ctx.scale(scale, scale);
+    }
+
+    let scaleMagnitude = 1;
+    if (typeof ctx.getTransform === 'function') {
+      const transform = ctx.getTransform();
+      scaleMagnitude = Math.sqrt(transform.a * transform.a + transform.c * transform.c) || 1;
+    }
+
+    this.drawGrid(ctx, world.width, world.height, world.segmentSize * 4, 1 / scaleMagnitude);
+    this.drawFood(ctx, gameState.food || []);
+    this.drawPowerups(ctx, gameState.powerups || []);
+    this.drawPlayers(ctx, gameState.players || []);
+
+    if (highlightPlayerId) {
+      const focus = (gameState.players || []).find((player) => player.id === highlightPlayerId);
+      if (focus) {
+        this.drawSpectatorFocus(ctx, focus, scaleMagnitude);
+      }
+    }
+
+    ctx.restore();
+    ctx.restore();
+  }
+
+  drawSpectatorFocus(ctx, player, scale = 1) {
+    if (!player?.segments?.length) return;
+    const head = player.segments[0];
+    ctx.save();
+    const now = performance.now();
+    const pulse = 16 + Math.sin(now / 180) * 3;
+    ctx.strokeStyle = 'rgba(255, 255, 255, 0.7)';
+    ctx.lineWidth = 2 / scale;
+    ctx.beginPath();
+    ctx.arc(head.x, head.y, pulse, 0, Math.PI * 2);
+    ctx.stroke();
+    ctx.strokeStyle = (player.color || '#40a9ff') + 'cc';
+    ctx.lineWidth = 1.5 / scale;
+    ctx.beginPath();
+    ctx.arc(head.x, head.y, pulse + 6, 0, Math.PI * 2);
+    ctx.stroke();
+    ctx.restore();
+  }
+
+  renderSpectatorCameraViews(gameState) {
+    const spectator = this.state.spectator;
+    if (!spectator?.active) return;
+    const contexts = this.elements.spectatorCameraContexts;
+    if (!(contexts instanceof Map) || contexts.size === 0) return;
+    const cameraIds = Array.isArray(spectator.cameraIds) ? spectator.cameraIds : [];
+    if (!cameraIds.length) return;
+    contexts.forEach((context, playerId) => {
+      if (!cameraIds.includes(playerId)) return;
+      const zoom = spectator.cameraZoom || 2.4;
+      this.renderScene(context, gameState, {
+        focusPlayerId: playerId,
+        zoom,
+        highlightPlayerId: playerId,
+        background: '#03050a'
+      });
+    });
+  }
+
   renderFrame() {
     if (!this.ctx) return;
     const now = performance.now();
@@ -176,9 +281,8 @@ export class Renderer {
     this.lastFrameTime = now;
     this.updateParticles(delta);
 
-    const gameState = this.state.replay.playing
-      ? this.state.replay.frames[this.state.replay.index]
-      : this.state.game;
+    const useReplay = this.state.replay.playing;
+    const gameState = useReplay ? this.state.replay.frames[this.state.replay.index] : this.state.game;
     const world = this.state.world;
     if (!world || !gameState) {
       this.ctx.fillStyle = '#050505';
@@ -186,18 +290,12 @@ export class Renderer {
       return;
     }
 
-    if (this.elements.canvas.width !== world.width || this.elements.canvas.height !== world.height) {
-      this.elements.canvas.width = world.width;
-      this.elements.canvas.height = world.height;
+    const highlightId = !useReplay && this.state.spectator?.active ? this.state.spectator.focusId : null;
+    this.renderScene(this.ctx, gameState, { fitWorld: true, highlightPlayerId: highlightId });
+    if (!useReplay) {
+      this.drawParticles(this.ctx);
+      this.renderSpectatorCameraViews(gameState);
     }
-
-    this.ctx.fillStyle = '#050510';
-    this.ctx.fillRect(0, 0, world.width, world.height);
-    this.drawGrid(this.ctx, world.width, world.height, world.segmentSize * 4);
-    this.drawFood(this.ctx, gameState.food || []);
-    this.drawPowerups(this.ctx, gameState.powerups || []);
-    this.drawPlayers(this.ctx, gameState.players || []);
-    this.drawParticles(this.ctx);
   }
 
   renderReplayFrame() {
@@ -207,14 +305,6 @@ export class Renderer {
       this.replayCtx.fillStyle = '#050505';
       this.replayCtx.fillRect(0, 0, this.elements.replayCanvas.width, this.elements.replayCanvas.height);
       return;
-    }
-
-    if (
-      this.elements.replayCanvas.width !== this.state.world.width ||
-      this.elements.replayCanvas.height !== this.state.world.height
-    ) {
-      this.elements.replayCanvas.width = this.state.world.width;
-      this.elements.replayCanvas.height = this.state.world.height;
     }
 
     if (replay.playing) {
@@ -233,11 +323,6 @@ export class Renderer {
     }
 
     const frame = replay.frames[replay.index];
-    this.replayCtx.fillStyle = '#050510';
-    this.replayCtx.fillRect(0, 0, this.state.world.width, this.state.world.height);
-    this.drawGrid(this.replayCtx, this.state.world.width, this.state.world.height, this.state.world.segmentSize * 4);
-    this.drawFood(this.replayCtx, frame.food || []);
-    this.drawPowerups(this.replayCtx, frame.powerups || []);
-    this.drawPlayers(this.replayCtx, frame.players || []);
+    this.renderScene(this.replayCtx, frame, { fitWorld: true });
   }
 }
