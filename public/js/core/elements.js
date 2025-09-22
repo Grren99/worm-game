@@ -18,6 +18,9 @@ export const elements = {
   colorPreview: document.getElementById('color-preview'),
   sfxVolume: document.getElementById('sfx-volume'),
   sfxVolumeValue: document.getElementById('sfx-volume-value'),
+  eventCueVolume: document.getElementById('event-cue-volume'),
+  eventCueVolumeValue: document.getElementById('event-cue-volume-value'),
+  eventSettingsForm: document.getElementById('event-feed-settings'),
   accessibilityContrast: document.getElementById('accessibility-contrast'),
   accessibilityColorblind: document.getElementById('accessibility-colorblind'),
   quickJoin: document.getElementById('quick-join'),
@@ -80,6 +83,14 @@ elements.colorButtons = [...(elements.colorPalette?.querySelectorAll('button') |
 
 elements.highlightTagButtons = [
   ...(elements.highlightTagFilters?.querySelectorAll('button[data-tag]') || [])
+];
+
+elements.eventFilterCheckboxes = [
+  ...(document.querySelectorAll('[data-event-filter]') || [])
+];
+
+elements.eventSoundCheckboxes = [
+  ...(document.querySelectorAll('[data-event-sound]') || [])
 ];
 
 elements.canvasContext = elements.canvas?.getContext('2d') || null;

@@ -42,6 +42,23 @@ export const POWERUP_ICON = {
   shrink: '🌀'
 };
 
+export const EVENT_FEED_TYPES = [
+  { key: 'kill', label: '킬', icon: '⚔️' },
+  { key: 'golden-food', label: '골든 음식', icon: '✨' },
+  { key: 'powerup', label: '파워업', icon: '🔋' },
+  { key: 'round-end', label: '라운드 종료', icon: '🏁' }
+];
+
+export const EVENT_FEED_TYPE_KEYS = EVENT_FEED_TYPES.map((type) => type.key);
+
+export const createEventFeedToggleDefaults = () => {
+  const toggles = {};
+  EVENT_FEED_TYPES.forEach(({ key }) => {
+    toggles[key] = true;
+  });
+  return toggles;
+};
+
 export const initialState = () => ({
   playerId: null,
   roomId: null,
@@ -77,7 +94,9 @@ export const initialState = () => ({
   audioEnabled: false,
   audioReady: false,
   audioSettings: {
-    sfxVolume: 0.7
+    sfxVolume: 0.7,
+    eventCueVolume: 0.8,
+    eventCueTypes: createEventFeedToggleDefaults()
   },
   preferences: {
     color: PLAYER_COLOR_KEYS[0],
@@ -85,6 +104,9 @@ export const initialState = () => ({
     accessibility: {
       hudHighContrast: false,
       colorblindPatterns: false
+    },
+    eventFeed: {
+      filters: createEventFeedToggleDefaults()
     }
   },
   personal: {

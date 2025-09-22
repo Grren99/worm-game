@@ -240,6 +240,9 @@ export class AudioManager {
 
   setSfxVolume(volume) {
     const clamped = this.clampVolume(volume);
+    if (!this.state.audioSettings || typeof this.state.audioSettings !== 'object') {
+      this.state.audioSettings = {};
+    }
     if (!this.state.audioSettings) {
       this.state.audioSettings = { sfxVolume: clamped };
     } else {
@@ -249,6 +252,49 @@ export class AudioManager {
     if (bus) {
       bus.gain.value = clamped;
     }
+  }
+
+  ensureEventCueSettings() {
+    if (!this.state.audioSettings || typeof this.state.audioSettings !== 'object') {
+      this.state.audioSettings = {};
+    }
+    if (typeof this.state.audioSettings.eventCueVolume !== 'number') {
+      this.state.audioSettings.eventCueVolume = 0.8;
+    } else {
+      this.state.audioSettings.eventCueVolume = this.clampVolume(
+        this.state.audioSettings.eventCueVolume
+      );
+    }
+    if (!this.state.audioSettings.eventCueTypes || typeof this.state.audioSettings.eventCueTypes !== 'object') {
+      this.state.audioSettings.eventCueTypes = {};
+    }
+    ['kill', 'golden-food', 'powerup', 'round-end'].forEach((type) => {
+      if (typeof this.state.audioSettings.eventCueTypes[type] !== 'boolean') {
+        this.state.audioSettings.eventCueTypes[type] = true;
+      }
+    });
+    return this.state.audioSettings;
+  }
+
+  getEventCueVolume() {
+    const settings = this.ensureEventCueSettings();
+    return this.clampVolume(settings.eventCueVolume ?? 0.8);
+  }
+
+  setEventCueVolume(volume) {
+    const settings = this.ensureEventCueSettings();
+    settings.eventCueVolume = this.clampVolume(volume);
+    return settings.eventCueVolume;
+  }
+
+  isEventCueEnabled(type) {
+    const settings = this.ensureEventCueSettings();
+    const normalized = typeof type === 'string' ? type : '';
+    if (!normalized) return true;
+    if (Object.prototype.hasOwnProperty.call(settings.eventCueTypes, normalized)) {
+      return Boolean(settings.eventCueTypes[normalized]);
+    }
+    return true;
   }
 
   playNotification(type = 'info') {
@@ -268,6 +314,9 @@ export class AudioManager {
     const safeIndex = Number.isFinite(index) ? Math.max(0, index) : 0;
     const damp = Math.max(0.38, 1 - safeIndex * 0.22);
     const type = event?.type || 'info';
+    if (!this.isEventCueEnabled(type)) return;
+    const intensity = damp * this.getEventCueVolume();
+    if (intensity <= 0) return;
     switch (type) {
       case 'kill': {
         this.playSequence(
@@ -275,7 +324,7 @@ export class AudioManager {
             { freq: 760, duration: 0.12, type: 'square', gainValue: 0.26, bus: 'ui' },
             { freq: 420, duration: 0.22, type: 'sawtooth', gainValue: 0.28, delay: 0.08, bus: 'ui' }
           ],
-          { intensity: damp, defaultBus: 'ui' }
+          { intensity, defaultBus: 'ui' }
         );
         break;
       }
@@ -286,7 +335,7 @@ export class AudioManager {
             { freq: 1040, duration: 0.18, type: 'sine', gainValue: 0.18, delay: 0.06, bus: 'ui' },
             { freq: 1320, duration: 0.16, type: 'triangle', gainValue: 0.14, delay: 0.14, bus: 'ui' }
           ],
-          { intensity: damp, defaultBus: 'ui' }
+          { intensity, defaultBus: 'ui' }
         );
         break;
       }
@@ -298,7 +347,7 @@ export class AudioManager {
             { freq: base, duration: 0.12, type: 'triangle', gainValue: 0.18, bus: 'ui' },
             { freq: base + 140, duration: 0.14, type: 'sine', gainValue: 0.16, delay: 0.07, bus: 'ui' }
           ],
-          { intensity: damp, defaultBus: 'ui' }
+          { intensity, defaultBus: 'ui' }
         );
         break;
       }
@@ -308,12 +357,18 @@ export class AudioManager {
             { freq: 600, duration: 0.18, type: 'triangle', gainValue: 0.2, bus: 'ui' },
             { freq: 460, duration: 0.26, type: 'sawtooth', gainValue: 0.24, delay: 0.1, bus: 'ui' }
           ],
-          { intensity: damp, defaultBus: 'ui' }
+          { intensity, defaultBus: 'ui' }
         );
         break;
       }
       default: {
-        this.blip({ freq: 540, duration: 0.16, type: 'triangle', gainValue: 0.18, bus: 'ui' });
+        this.blip({
+          freq: 540,
+          duration: 0.16,
+          type: 'triangle',
+          gainValue: 0.18 * intensity,
+          bus: 'ui'
+        });
       }
     }
   }

@@ -191,6 +191,71 @@ body {
   line-height: 1.4;
 }
 
+.event-settings {
+  margin: 4px 0 8px;
+  padding: 12px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.03);
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.event-settings legend {
+  margin-left: 4px;
+  padding: 0 4px;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-muted);
+}
+
+.event-settings__volume {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  font-size: 13px;
+}
+
+.event-settings__grid {
+  display: grid;
+  gap: 8px;
+}
+
+.event-settings__row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) repeat(2, max-content);
+  align-items: center;
+  gap: 10px;
+  padding: 8px 10px;
+  border-radius: 8px;
+  background: rgba(0, 0, 0, 0.24);
+}
+
+.event-settings__label {
+  font-weight: 600;
+  font-size: 13px;
+  color: rgba(255, 255, 255, 0.9);
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.event-settings__row .field__option {
+  gap: 6px;
+  font-size: 12px;
+}
+
+.event-settings__row .field__option span {
+  flex: 0;
+}
+
+.event-settings__row input[type='checkbox'] {
+  width: 16px;
+  height: 16px;
+  accent-color: #40a9ff;
+}
+
 .color-palette {
   display: grid;
   grid-template-columns: repeat(8, 1fr);

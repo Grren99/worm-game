@@ -6,7 +6,9 @@ import {
   PLAYER_COLOR_KEYS,
   POWERUP_ICON,
   POWERUP_LABEL,
-  TICK_RATE
+  EVENT_FEED_TYPES,
+  TICK_RATE,
+  createEventFeedToggleDefaults
 } from './state.js';
 import { recommendClips } from './highlightRecommender.js';
 import { validateHighlightClip } from './highlightValidator.js';
@@ -63,6 +65,8 @@ const EVENT_ICONS = {
   'round-end': '🏁'
 };
 
+const EVENT_FEED_LABELS = new Map(EVENT_FEED_TYPES.map(({ key, label }) => [key, label]));
+
 export class UIManager {
   constructor({ state, elements, socket, audio, highlightLibrary }) {
     this.state = state;
@@ -76,6 +80,7 @@ export class UIManager {
     this.eventFeedHighlights = new Map();
     this.eventFeedPulseTimeout = null;
     this.eventHighlightClearTimeout = null;
+    this.eventFeedStorageWarning = { load: false, save: false };
   }
 
   init() {
@@ -84,6 +89,7 @@ export class UIManager {
     this.updateModeIndicator();
     this.restoreAudioSettings();
     this.restoreAccessibilityOptions();
+    this.restoreEventFeedPreferences();
     this.attachEventListeners();
     this.restoreHighlightFavorites();
     this.renderHighlights();
@@ -116,6 +122,12 @@ export class UIManager {
     if (!Number.isFinite(seconds)) return null;
     const rounded = Math.round(seconds * 10) / 10;
     return `${rounded.toFixed(1).replace(/\.0$/, '')}초`;
+  }
+
+  getEventFeedLabel(type) {
+    if (!type) return '이벤트';
+    const normalized = String(type);
+    return EVENT_FEED_LABELS.get(normalized) || '이벤트';
   }
 
   getReplayMarkerPrimaryText(marker) {
@@ -188,11 +200,13 @@ export class UIManager {
 
   registerEventFeedEvents(events = []) {
     if (!Array.isArray(events) || !events.length) return;
+    const visibleEvents = events.filter((event) => this.isEventFeedTypeEnabled(event));
+    if (!visibleEvents.length) return;
     if (!this.eventFeedHighlights) this.eventFeedHighlights = new Map();
     this.cleanupExpiredEventHighlights();
     const now = Date.now();
     const expireAt = now + 1600;
-    events.forEach((event, index) => {
+    visibleEvents.forEach((event, index) => {
       if (!event) return;
       const rawId = event.id ?? `${now}-${index}-${Math.random().toString(16).slice(2)}`;
       const id = String(rawId);
@@ -231,6 +245,16 @@ export class UIManager {
     if (expiry <= now) {
       this.eventFeedHighlights.delete(id);
       return false;
+    }
+    return true;
+  }
+
+  isEventFeedTypeEnabled(event) {
+    const eventFeed = this.ensureEventFeedPreferences();
+    const type = typeof event === 'string' ? event : event?.type;
+    if (!type) return true;
+    if (Object.prototype.hasOwnProperty.call(eventFeed.filters, type)) {
+      return Boolean(eventFeed.filters[type]);
     }
     return true;
   }
@@ -287,19 +311,110 @@ export class UIManager {
     return Math.max(0, Math.min(1, value));
   }
 
+  ensureEventCueSettings() {
+    if (!this.state.audioSettings || typeof this.state.audioSettings !== 'object') {
+      this.state.audioSettings = {};
+    }
+    if (typeof this.state.audioSettings.sfxVolume !== 'number') {
+      this.state.audioSettings.sfxVolume = 0.7;
+    }
+    if (typeof this.state.audioSettings.eventCueVolume !== 'number') {
+      this.state.audioSettings.eventCueVolume = 0.8;
+    } else {
+      this.state.audioSettings.eventCueVolume = this.clampVolume(
+        this.state.audioSettings.eventCueVolume
+      );
+    }
+    if (!this.state.audioSettings.eventCueTypes || typeof this.state.audioSettings.eventCueTypes !== 'object') {
+      this.state.audioSettings.eventCueTypes = createEventFeedToggleDefaults();
+    } else {
+      EVENT_FEED_TYPES.forEach(({ key }) => {
+        if (typeof this.state.audioSettings.eventCueTypes[key] !== 'boolean') {
+          this.state.audioSettings.eventCueTypes[key] = true;
+        }
+      });
+    }
+    return this.state.audioSettings;
+  }
+
+  ensureEventFeedPreferences() {
+    if (!this.state.preferences || typeof this.state.preferences !== 'object') {
+      this.state.preferences = {};
+    }
+    if (!this.state.preferences.eventFeed || typeof this.state.preferences.eventFeed !== 'object') {
+      this.state.preferences.eventFeed = {
+        filters: createEventFeedToggleDefaults()
+      };
+    }
+    const eventFeed = this.state.preferences.eventFeed;
+    if (!eventFeed.filters || typeof eventFeed.filters !== 'object') {
+      eventFeed.filters = createEventFeedToggleDefaults();
+    } else {
+      EVENT_FEED_TYPES.forEach(({ key }) => {
+        if (typeof eventFeed.filters[key] !== 'boolean') {
+          eventFeed.filters[key] = true;
+        }
+      });
+    }
+    return eventFeed;
+  }
+
   renderAudioSettings() {
-    const volume = this.clampVolume(this.state.audioSettings?.sfxVolume ?? 0.7);
+    const settings = this.ensureEventCueSettings();
+    const sfxVolume = this.clampVolume(settings.sfxVolume ?? 0.7);
     if (this.elements.sfxVolume) {
-      this.elements.sfxVolume.value = Math.round(volume * 100);
+      this.elements.sfxVolume.value = Math.round(sfxVolume * 100);
     }
     if (this.elements.sfxVolumeValue) {
-      this.elements.sfxVolumeValue.textContent = `${Math.round(volume * 100)}%`;
+      this.elements.sfxVolumeValue.textContent = `${Math.round(sfxVolume * 100)}%`;
+    }
+    const eventVolume = this.clampVolume(settings.eventCueVolume ?? 0.8);
+    if (this.elements.eventCueVolume) {
+      this.elements.eventCueVolume.value = Math.round(eventVolume * 100);
+    }
+    if (this.elements.eventCueVolumeValue) {
+      this.elements.eventCueVolumeValue.textContent = `${Math.round(eventVolume * 100)}%`;
+    }
+  }
+
+  renderEventFeedFilters() {
+    const eventFeed = this.ensureEventFeedPreferences();
+    const audioSettings = this.ensureEventCueSettings();
+    if (Array.isArray(this.elements.eventFilterCheckboxes)) {
+      this.elements.eventFilterCheckboxes.forEach((input) => {
+        if (!input || !input.dataset) return;
+        const key = input.dataset.eventFilter;
+        if (!key) return;
+        const enabled = eventFeed.filters?.[key] !== false;
+        input.checked = enabled;
+      });
+    }
+    if (Array.isArray(this.elements.eventSoundCheckboxes)) {
+      this.elements.eventSoundCheckboxes.forEach((input) => {
+        if (!input || !input.dataset) return;
+        const key = input.dataset.eventSound;
+        if (!key) return;
+        const enabled = audioSettings.eventCueTypes?.[key] !== false;
+        input.checked = enabled;
+      });
     }
   }
 
   persistAudioSettings() {
+    const settings = this.ensureEventCueSettings();
+    const normalizedTypes = {};
+    EVENT_FEED_TYPES.forEach(({ key }) => {
+      normalizedTypes[key] = settings.eventCueTypes?.[key] !== false;
+    });
+    settings.eventCueTypes = { ...normalizedTypes };
+    settings.sfxVolume = this.clampVolume(settings.sfxVolume ?? 0.7);
+    settings.eventCueVolume = this.clampVolume(settings.eventCueVolume ?? 0.8);
     try {
-      const payload = JSON.stringify({ sfxVolume: this.state.audioSettings?.sfxVolume ?? 0.7 });
+      const payload = JSON.stringify({
+        sfxVolume: this.clampVolume(settings.sfxVolume ?? 0.7),
+        eventCueVolume: this.clampVolume(settings.eventCueVolume ?? 0.8),
+        eventCueTypes: normalizedTypes
+      });
       localStorage.setItem('owb.audio-settings', payload);
     } catch (error) {
       if (!this.audioStorageWarning.save) {
@@ -310,15 +425,25 @@ export class UIManager {
   }
 
   restoreAudioSettings() {
-    if (!this.state.audioSettings || typeof this.state.audioSettings !== 'object') {
-      this.state.audioSettings = { sfxVolume: 0.7 };
-    }
+    const settings = this.ensureEventCueSettings();
     try {
       const stored = localStorage.getItem('owb.audio-settings');
       if (stored) {
         const parsed = JSON.parse(stored);
-        if (parsed && typeof parsed.sfxVolume === 'number') {
-          this.state.audioSettings.sfxVolume = this.clampVolume(parsed.sfxVolume);
+        if (parsed && typeof parsed === 'object') {
+          if (typeof parsed.sfxVolume === 'number') {
+            settings.sfxVolume = this.clampVolume(parsed.sfxVolume);
+          }
+          if (typeof parsed.eventCueVolume === 'number') {
+            settings.eventCueVolume = this.clampVolume(parsed.eventCueVolume);
+          }
+          if (parsed.eventCueTypes && typeof parsed.eventCueTypes === 'object') {
+            EVENT_FEED_TYPES.forEach(({ key }) => {
+              if (typeof parsed.eventCueTypes[key] === 'boolean') {
+                settings.eventCueTypes[key] = Boolean(parsed.eventCueTypes[key]);
+              }
+            });
+          }
         }
       }
     } catch (error) {
@@ -327,13 +452,57 @@ export class UIManager {
         this.audioStorageWarning.load = true;
       }
     }
-    if (typeof this.state.audioSettings.sfxVolume !== 'number') {
-      this.state.audioSettings.sfxVolume = 0.7;
-    }
+    settings.sfxVolume = this.clampVolume(settings.sfxVolume ?? 0.7);
+    settings.eventCueVolume = this.clampVolume(settings.eventCueVolume ?? 0.8);
     if (typeof this.audio?.setSfxVolume === 'function') {
-      this.audio.setSfxVolume(this.state.audioSettings.sfxVolume);
+      this.audio.setSfxVolume(settings.sfxVolume);
+    }
+    if (typeof this.audio?.setEventCueVolume === 'function') {
+      this.audio.setEventCueVolume(settings.eventCueVolume);
     }
     this.renderAudioSettings();
+    this.renderEventFeedFilters();
+  }
+
+  persistEventFeedPreferences() {
+    const eventFeed = this.ensureEventFeedPreferences();
+    const serializedFilters = {};
+    EVENT_FEED_TYPES.forEach(({ key }) => {
+      serializedFilters[key] = eventFeed.filters?.[key] !== false;
+    });
+    eventFeed.filters = { ...serializedFilters };
+    try {
+      localStorage.setItem('owb.event-feed', JSON.stringify({ filters: serializedFilters }));
+    } catch (error) {
+      if (!this.eventFeedStorageWarning.save) {
+        console.warn('이벤트 피드 설정 저장 실패:', error);
+        this.eventFeedStorageWarning.save = true;
+      }
+    }
+  }
+
+  restoreEventFeedPreferences() {
+    const eventFeed = this.ensureEventFeedPreferences();
+    try {
+      const stored = localStorage.getItem('owb.event-feed');
+      if (stored) {
+        const parsed = JSON.parse(stored);
+        if (parsed && typeof parsed.filters === 'object') {
+          EVENT_FEED_TYPES.forEach(({ key }) => {
+            if (typeof parsed.filters[key] === 'boolean') {
+              eventFeed.filters[key] = Boolean(parsed.filters[key]);
+            }
+          });
+        }
+      }
+    } catch (error) {
+      if (!this.eventFeedStorageWarning.load) {
+        console.warn('이벤트 피드 설정 불러오기 실패:', error);
+        this.eventFeedStorageWarning.load = true;
+      }
+    }
+    this.renderEventFeedFilters();
+    this.renderEventFeed();
   }
 
   ensureAccessibilityPreferences() {
@@ -418,6 +587,57 @@ export class UIManager {
     }
     this.renderAudioSettings();
     this.persistAudioSettings();
+  }
+
+  updateEventCueVolume(value) {
+    const settings = this.ensureEventCueSettings();
+    const clamped = this.clampVolume(value);
+    settings.eventCueVolume = clamped;
+    if (this.elements.eventCueVolume) {
+      this.elements.eventCueVolume.value = Math.round(clamped * 100);
+    }
+    if (this.elements.eventCueVolumeValue) {
+      this.elements.eventCueVolumeValue.textContent = `${Math.round(clamped * 100)}%`;
+    }
+    if (typeof this.audio?.setEventCueVolume === 'function') {
+      this.audio.setEventCueVolume(clamped);
+    }
+    this.persistAudioSettings();
+  }
+
+  toggleEventFeedFilter(type, enabled) {
+    if (!type) return;
+    const eventFeed = this.ensureEventFeedPreferences();
+    const next = Boolean(enabled);
+    if (eventFeed.filters[type] === next) return;
+    eventFeed.filters[type] = next;
+    this.persistEventFeedPreferences();
+    this.renderEventFeed();
+    this.renderEventFeedFilters();
+    const label = this.getEventFeedLabel(type);
+    this.notify(
+      eventFeed.filters[type]
+        ? `${label} 이벤트를 피드에 표시합니다.`
+        : `${label} 이벤트를 피드에서 숨깁니다.`,
+      'info'
+    );
+  }
+
+  toggleEventCueType(type, enabled) {
+    if (!type) return;
+    const settings = this.ensureEventCueSettings();
+    const next = Boolean(enabled);
+    if (settings.eventCueTypes[type] === next) return;
+    settings.eventCueTypes[type] = next;
+    this.persistAudioSettings();
+    this.renderEventFeedFilters();
+    const label = this.getEventFeedLabel(type);
+    this.notify(
+      settings.eventCueTypes[type]
+        ? `${label} 효과음을 재생합니다.`
+        : `${label} 효과음을 음소거합니다.`,
+      'info'
+    );
   }
 
   applyPreferredColor(color, { attemptChange = false } = {}) {
@@ -1008,7 +1228,12 @@ export class UIManager {
       this.elements.eventFeed.innerHTML = '<li class="empty">전투 이벤트를 기다리는 중...</li>';
       return;
     }
-    const entries = [...events].reverse();
+    const entries = [...events].reverse().filter((event) => this.isEventFeedTypeEnabled(event));
+    if (!entries.length) {
+      this.elements.eventFeed.innerHTML =
+        '<li class="empty">선택한 카테고리에 해당하는 이벤트가 없습니다.</li>';
+      return;
+    }
     this.elements.eventFeed.innerHTML = entries
       .map((event, index) => {
         const type = event.type || 'info';
@@ -2264,6 +2489,33 @@ export class UIManager {
       this.elements.sfxVolume.addEventListener('input', (event) => {
         const raw = Number(event.target.value);
         this.updateSfxVolume(raw / 100);
+      });
+    }
+
+    if (this.elements.eventCueVolume) {
+      this.elements.eventCueVolume.addEventListener('input', (event) => {
+        const raw = Number(event.target.value);
+        this.updateEventCueVolume(raw / 100);
+      });
+    }
+
+    if (Array.isArray(this.elements.eventFilterCheckboxes)) {
+      this.elements.eventFilterCheckboxes.forEach((input) => {
+        input.addEventListener('change', (event) => {
+          const checkbox = event.currentTarget;
+          if (!checkbox?.dataset?.eventFilter) return;
+          this.toggleEventFeedFilter(checkbox.dataset.eventFilter, checkbox.checked);
+        });
+      });
+    }
+
+    if (Array.isArray(this.elements.eventSoundCheckboxes)) {
+      this.elements.eventSoundCheckboxes.forEach((input) => {
+        input.addEventListener('change', (event) => {
+          const checkbox = event.currentTarget;
+          if (!checkbox?.dataset?.eventSound) return;
+          this.toggleEventCueType(checkbox.dataset.eventSound, checkbox.checked);
+        });
       });
     }
 

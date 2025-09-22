@@ -53,6 +53,63 @@
               </div>
               <small class="field__hint">채팅/시스템 알림음 크기를 조절합니다</small>
             </label>
+            <fieldset class="event-settings" id="event-feed-settings">
+              <legend>이벤트 피드 알림</legend>
+              <label class="event-settings__volume">
+                <span>이벤트 효과음 볼륨</span>
+                <div class="volume-control">
+                  <input id="event-cue-volume" type="range" min="0" max="100" step="5" />
+                  <span class="volume-control__value" id="event-cue-volume-value">80%</span>
+                </div>
+                <small class="field__hint">전투 이벤트 효과음의 전반적인 크기를 조절합니다</small>
+              </label>
+              <div class="event-settings__grid">
+                <div class="event-settings__row" data-event-row="kill">
+                  <span class="event-settings__label">⚔️ 킬</span>
+                  <label class="field__option">
+                    <input type="checkbox" data-event-filter="kill" checked />
+                    <span>피드 표시</span>
+                  </label>
+                  <label class="field__option">
+                    <input type="checkbox" data-event-sound="kill" checked />
+                    <span>효과음</span>
+                  </label>
+                </div>
+                <div class="event-settings__row" data-event-row="golden-food">
+                  <span class="event-settings__label">✨ 골든 음식</span>
+                  <label class="field__option">
+                    <input type="checkbox" data-event-filter="golden-food" checked />
+                    <span>피드 표시</span>
+                  </label>
+                  <label class="field__option">
+                    <input type="checkbox" data-event-sound="golden-food" checked />
+                    <span>효과음</span>
+                  </label>
+                </div>
+                <div class="event-settings__row" data-event-row="powerup">
+                  <span class="event-settings__label">🔋 파워업</span>
+                  <label class="field__option">
+                    <input type="checkbox" data-event-filter="powerup" checked />
+                    <span>피드 표시</span>
+                  </label>
+                  <label class="field__option">
+                    <input type="checkbox" data-event-sound="powerup" checked />
+                    <span>효과음</span>
+                  </label>
+                </div>
+                <div class="event-settings__row" data-event-row="round-end">
+                  <span class="event-settings__label">🏁 라운드 종료</span>
+                  <label class="field__option">
+                    <input type="checkbox" data-event-filter="round-end" checked />
+                    <span>피드 표시</span>
+                  </label>
+                  <label class="field__option">
+                    <input type="checkbox" data-event-sound="round-end" checked />
+                    <span>효과음</span>
+                  </label>
+                </div>
+              </div>
+            </fieldset>
             <div class="field field--stacked">
               <span>접근성 옵션</span>
               <label class="field__option">
