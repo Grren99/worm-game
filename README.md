@@ -12,10 +12,15 @@
 - ⏱ **생존 보너스**: 오래 버틸수록 라운드 종료 시 추가 점수를 획득합니다
 - 💬 **커뮤니케이션**: 실시간 채팅과 시스템 알림, 경기후 리플레이 지원
 - 📊 **랭킹 & 통계**: 승리 횟수, 평균 점수, 생존 시간 기반으로 글로벌 통계 제공
+- 📇 **개인 프로필**: MongoDB에 저장된 누적 전적을 불러와 내 상태 패널에서 즉시 확인
 
 ## 빠른 시작
 ```bash
 npm install
+# (선택) MongoDB를 사용하려면 아래 환경 변수를 설정하세요
+# export MONGODB_URI="mongodb+srv://user:password@cluster.mongodb.net/?retryWrites=true&w=majority"
+# export MONGODB_DB="online_worm_battle"
+# export MONGODB_COLLECTION="player_stats"
 npm start
 ```
 
@@ -55,10 +60,18 @@ npm start
 - `server.js` 에서 게임 월드 규격, 파워업 지속시간, 점수 체계 등을 중앙 관리합니다
 - `/public/js/main.js` 는 캔버스 렌더링, UI 업데이트, 소켓 이벤트, 오디오 제어를 담당합니다
 - `/api/stats` 엔드포인트로 현재까지의 글로벌 통계를 JSON 으로 확인할 수 있습니다
+- `/api/profile/:name` 엔드포인트로 특정 플레이어의 누적 전적을 불러올 수 있습니다 (MongoDB 연결 시 영구 저장)
 - 개발 중에는 `npm run dev` 로 nodemon 감시 실행이 가능합니다
 
+## 환경 변수
+- `MONGODB_URI`: MongoDB 연결 문자열. 설정하지 않으면 서버 메모리에 통계를 보관합니다.
+- `MONGODB_DB`: 사용할 데이터베이스 이름 (기본값 `online_worm_battle`).
+- `MONGODB_COLLECTION`: 플레이어 통계를 저장할 컬렉션 이름 (기본값 `player_stats`).
+
+MongoDB가 연결되면 게임 종료 시 각 플레이어의 점수/생존/킬/선호 색상이 자동으로 영구 저장되고, 로비의 **내 상태** 영역과 REST API를 통해 즉시 확인할 수 있습니다.
+
 ## 향후 아이디어
-- MongoDB 연동으로 랭킹/프로필 영구 저장
+- 통합 계정/친구 초대 시스템 연동
 - 모바일 터치 컨트롤 및 패드 UI
 - 커스텀 룰(맵 크기, 파워업 빈도) 설정 옵션
 - 고급 파티클/셰이더 기반 시각 효과

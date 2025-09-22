@@ -473,6 +473,34 @@ input:focus {
   margin-bottom: 6px;
 }
 
+.profile-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+  font-size: 12px;
+}
+
+.profile-list li {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 6px 8px;
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.04);
+}
+
+.profile-list span {
+  color: var(--text-muted);
+}
+
+.profile-list strong {
+  color: var(--text);
+  font-weight: 600;
+}
+
 .player-status {
   font-size: 13px;
   color: var(--text-muted);

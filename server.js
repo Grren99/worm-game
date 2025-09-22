@@ -3,6 +3,7 @@ const http = require('http');
 const path = require('path');
 const { Server } = require('socket.io');
 const { v4: uuidv4 } = require('uuid');
+const { MongoClient } = require('mongodb');
 
 const PORT = process.env.PORT || 3000;
 const STATIC_DIR = path.join(__dirname, 'public');
@@ -128,6 +129,10 @@ const GAME_MODES = {
   }
 };
 
+const MONGODB_URI = process.env.MONGODB_URI || '';
+const MONGODB_DB = process.env.MONGODB_DB || 'online_worm_battle';
+const MONGODB_COLLECTION = process.env.MONGODB_COLLECTION || 'player_stats';
+
 const app = express();
 const server = http.createServer(app);
 const io = new Server(server, {
@@ -143,7 +148,6 @@ const resolveMode = (modeKey) => {
 app.use(express.static(STATIC_DIR));
 
 const rooms = new Map();
-const globalStats = new Map();
 
 const clamp = (value, min, max) => Math.max(min, Math.min(value, max));
 
@@ -153,6 +157,281 @@ const randomCoord = () => ({
 });
 
 const distance = (a, b) => Math.hypot(a.x - b.x, a.y - b.y);
+
+class StatsStore {
+  constructor() {
+    this.memory = new Map();
+    this.mongoUri = MONGODB_URI;
+    this.mongoDbName = MONGODB_DB;
+    this.mongoCollectionName = MONGODB_COLLECTION;
+    this.client = null;
+    this.collection = null;
+    this.connectPromise = null;
+  }
+
+  async ensureConnection() {
+    if (this.collection) return this.collection;
+    if (!this.mongoUri) return null;
+    if (!this.connectPromise) {
+      this.connectPromise = MongoClient.connect(this.mongoUri, {
+        maxPoolSize: 5,
+        serverSelectionTimeoutMS: 2000
+      })
+        .then((client) => {
+          this.client = client;
+          this.collection = client.db(this.mongoDbName).collection(this.mongoCollectionName);
+          return this.collection;
+        })
+        .catch((error) => {
+          console.error('MongoDB 연결 실패, 메모리 통계를 사용합니다.', error.message);
+          this.collection = null;
+          return null;
+        });
+    }
+    return this.connectPromise;
+  }
+
+  buildEmptyProfile(name) {
+    const now = Date.now();
+    return {
+      name,
+      games: 0,
+      wins: 0,
+      totalScore: 0,
+      totalSurvivalTicks: 0,
+      kills: 0,
+      bestScore: 0,
+      bestKills: 0,
+      lastColor: null,
+      lastMode: null,
+      createdAt: now,
+      updatedAt: now
+    };
+  }
+
+  recordInMemory({ name, score, survivalTicks, kills, win, color, mode }) {
+    const snapshot = this.memory.get(name) || this.buildEmptyProfile(name);
+    snapshot.games += 1;
+    snapshot.totalScore += score;
+    snapshot.totalSurvivalTicks += survivalTicks;
+    snapshot.kills += kills;
+    if (win) snapshot.wins += 1;
+    snapshot.bestScore = Math.max(snapshot.bestScore, score);
+    snapshot.bestKills = Math.max(snapshot.bestKills, kills);
+    if (color) snapshot.lastColor = color;
+    if (mode) snapshot.lastMode = mode;
+    snapshot.updatedAt = Date.now();
+    this.memory.set(name, snapshot);
+  }
+
+  async record(entry) {
+    this.recordInMemory(entry);
+    const collection = await this.ensureConnection();
+    if (!collection) return;
+    try {
+      await collection.updateOne(
+        { name: entry.name },
+        {
+          $inc: {
+            games: 1,
+            wins: entry.win ? 1 : 0,
+            totalScore: entry.score,
+            totalSurvivalTicks: entry.survivalTicks,
+            kills: entry.kills
+          },
+          $max: {
+            bestScore: entry.score,
+            bestKills: entry.kills
+          },
+          $set: {
+            updatedAt: new Date(),
+            lastScore: entry.score,
+            lastSurvivalTicks: entry.survivalTicks,
+            lastKills: entry.kills,
+            lastColor: entry.color || null,
+            lastMode: entry.mode || null
+          },
+          $setOnInsert: {
+            createdAt: new Date(),
+            bestScore: entry.score,
+            bestKills: entry.kills
+          }
+        },
+        { upsert: true }
+      );
+    } catch (error) {
+      console.error('MongoDB 통계 저장 실패, 메모리 통계로 대체합니다.', error.message);
+    }
+  }
+
+  async rememberPreference({ name, color, mode }) {
+    if (!name) return;
+    const snapshot = this.memory.get(name) || this.buildEmptyProfile(name);
+    const now = Date.now();
+    if (color) snapshot.lastColor = color;
+    if (mode) snapshot.lastMode = mode;
+    snapshot.updatedAt = now;
+    this.memory.set(name, snapshot);
+
+    const collection = await this.ensureConnection();
+    if (!collection) return;
+    const update = {
+      $set: {
+        updatedAt: new Date()
+      },
+      $setOnInsert: {
+        createdAt: new Date(),
+        games: 0,
+        wins: 0,
+        totalScore: 0,
+        totalSurvivalTicks: 0,
+        kills: 0,
+        bestScore: 0,
+        bestKills: 0
+      }
+    };
+    if (color) update.$set.lastColor = color;
+    if (mode) update.$set.lastMode = mode;
+    try {
+      await collection.updateOne({ name }, update, { upsert: true });
+    } catch (error) {
+      console.error('MongoDB 프로필 업데이트 실패:', error.message);
+    }
+  }
+
+  async getProfile(name) {
+    if (typeof name !== 'string' || !name.trim()) {
+      return this.buildEmptyProfile('unknown');
+    }
+    const safeName = name.trim();
+    const memoryProfile = this.memory.get(safeName) || null;
+    const collection = await this.ensureConnection();
+    if (!collection) {
+      return memoryProfile ? { ...memoryProfile } : this.buildEmptyProfile(safeName);
+    }
+    try {
+      const doc = await collection.findOne(
+        { name: safeName },
+        {
+          projection: {
+            _id: 0,
+            name: 1,
+            games: 1,
+            wins: 1,
+            totalScore: 1,
+            totalSurvivalTicks: 1,
+            kills: 1,
+            bestScore: 1,
+            bestKills: 1,
+            lastColor: 1,
+            lastMode: 1,
+            updatedAt: 1,
+            createdAt: 1
+          }
+        }
+      );
+      if (!doc) {
+        return memoryProfile ? { ...memoryProfile } : this.buildEmptyProfile(safeName);
+      }
+      return {
+        name: doc.name,
+        games: doc.games || 0,
+        wins: doc.wins || 0,
+        totalScore: doc.totalScore || 0,
+        totalSurvivalTicks: doc.totalSurvivalTicks || 0,
+        kills: doc.kills || 0,
+        bestScore: doc.bestScore || 0,
+        bestKills: doc.bestKills || 0,
+        lastColor: doc.lastColor || memoryProfile?.lastColor || null,
+        lastMode: doc.lastMode || memoryProfile?.lastMode || null,
+        updatedAt: doc.updatedAt instanceof Date ? doc.updatedAt.getTime() : Date.now(),
+        createdAt: doc.createdAt instanceof Date ? doc.createdAt.getTime() : memoryProfile?.createdAt || Date.now()
+      };
+    } catch (error) {
+      console.error('MongoDB 프로필 조회 실패, 메모리 프로필을 반환합니다.', error.message);
+      return memoryProfile ? { ...memoryProfile } : this.buildEmptyProfile(safeName);
+    }
+  }
+
+  async snapshot() {
+    const collection = await this.ensureConnection();
+    if (!collection) {
+      return {
+        updatedAt: Date.now(),
+        players: [...this.memory.entries()].map(([name, stats]) => ({
+          name,
+          games: stats.games,
+          wins: stats.wins,
+          totalScore: stats.totalScore,
+          totalSurvivalTicks: stats.totalSurvivalTicks,
+          kills: stats.kills,
+          bestScore: stats.bestScore || 0,
+          bestKills: stats.bestKills || 0,
+          lastColor: stats.lastColor || null,
+          lastMode: stats.lastMode || null,
+          updatedAt: stats.updatedAt
+        }))
+      };
+    }
+    try {
+      const docs = await collection
+        .find({}, {
+          projection: {
+            _id: 0,
+            name: 1,
+            games: 1,
+            wins: 1,
+            totalScore: 1,
+            totalSurvivalTicks: 1,
+            kills: 1,
+            updatedAt: 1
+          }
+        })
+        .limit(100)
+        .toArray();
+      const updatedAt = docs.reduce((latest, doc) => {
+        const value = doc.updatedAt instanceof Date ? doc.updatedAt.getTime() : Date.now();
+        return Math.max(latest, value);
+      }, 0);
+      return {
+        updatedAt: updatedAt || Date.now(),
+        players: docs.map((doc) => ({
+          name: doc.name,
+          games: doc.games || 0,
+          wins: doc.wins || 0,
+          totalScore: doc.totalScore || 0,
+          totalSurvivalTicks: doc.totalSurvivalTicks || 0,
+          kills: doc.kills || 0,
+          bestScore: doc.bestScore || 0,
+          bestKills: doc.bestKills || 0,
+          lastColor: doc.lastColor || null,
+          lastMode: doc.lastMode || null,
+          updatedAt: doc.updatedAt instanceof Date ? doc.updatedAt.getTime() : Date.now()
+        }))
+      };
+    } catch (error) {
+      console.error('MongoDB 통계 조회 실패, 메모리 통계로 대체합니다.', error.message);
+      return {
+        updatedAt: Date.now(),
+        players: [...this.memory.entries()].map(([name, stats]) => ({
+          name,
+          games: stats.games,
+          wins: stats.wins,
+          totalScore: stats.totalScore,
+          totalSurvivalTicks: stats.totalSurvivalTicks,
+          kills: stats.kills,
+          bestScore: stats.bestScore || 0,
+          bestKills: stats.bestKills || 0,
+          lastColor: stats.lastColor || null,
+          lastMode: stats.lastMode || null,
+          updatedAt: stats.updatedAt
+        }))
+      };
+    }
+  }
+}
+
+const statsStore = new StatsStore();
 
 class PlayerState {
   constructor({ id, name, color, socketId }) {
@@ -612,19 +891,32 @@ class RoomState {
   }
 
   recordGlobalStats(player, isWinner) {
-    const stats = globalStats.get(player.name) || {
-      games: 0,
-      wins: 0,
-      totalScore: 0,
-      totalSurvivalTicks: 0,
-      kills: 0
-    };
-    stats.games += 1;
-    stats.totalScore += player.score;
-    stats.totalSurvivalTicks += player.survivalTicks;
-    stats.kills += player.kills;
-    if (isWinner) stats.wins += 1;
-    globalStats.set(player.name, stats);
+    statsStore
+      .record({
+        name: player.name,
+        score: player.score,
+        survivalTicks: player.survivalTicks,
+        kills: player.kills,
+        win: Boolean(isWinner),
+        color: player.color,
+        mode: this.modeKey
+      })
+      .then(() => this.pushProfileUpdate(player))
+      .catch((error) => {
+        console.error('통계 기록 실패:', error.message);
+      });
+  }
+
+  pushProfileUpdate(player) {
+    statsStore
+      .getProfile(player.name)
+      .then((profile) => {
+        if (!profile) return;
+        io.to(player.socketId).emit('player:profile', profile);
+      })
+      .catch((error) => {
+        console.error('프로필 갱신 실패:', error.message);
+      });
   }
 
   serialize() {
@@ -879,6 +1171,19 @@ const joinRoom = ({ room, socket, playerName, preferredColor }, callback) => {
     world: { width: WORLD_WIDTH, height: WORLD_HEIGHT, segmentSize: SEGMENT_SIZE }
   });
 
+  statsStore.rememberPreference({ name: playerName, color, mode: room.modeKey }).catch((error) => {
+    console.error('플레이어 선호 설정 저장 실패:', error.message);
+  });
+
+  statsStore
+    .getProfile(playerName)
+    .then((profile) => {
+      socket.emit('player:profile', profile);
+    })
+    .catch((error) => {
+      console.error('플레이어 프로필 전송 실패:', error.message);
+    });
+
   room.broadcast('rooms:updated', getJoinableRooms());
   room.broadcast('room:notification', {
     id: uuidv4(),
@@ -909,19 +1214,64 @@ const checkRoomCleanup = (roomId) => {
   }
 };
 
-app.get('/api/stats', (req, res) => {
-  res.json({
-    updatedAt: Date.now(),
-    players: [...globalStats.entries()].map(([name, stats]) => ({
-      name,
-      games: stats.games,
-      wins: stats.wins,
-      averageScore: stats.games ? Math.round(stats.totalScore / stats.games) : 0,
-      winRate: stats.games ? +(stats.wins / stats.games * 100).toFixed(1) : 0,
-      averageSurvivalSeconds: stats.totalSurvivalTicks ? +(stats.totalSurvivalTicks / stats.games / TICK_RATE).toFixed(1) : 0,
-      kills: stats.kills
-    }))
-  });
+app.get('/api/stats', async (req, res) => {
+  try {
+    const snapshot = await statsStore.snapshot();
+    const players = snapshot.players.map((stats) => {
+      const { games } = stats;
+      return {
+        name: stats.name,
+        games,
+        wins: stats.wins,
+        averageScore: games ? Math.round(stats.totalScore / games) : 0,
+        winRate: games ? +(stats.wins / games * 100).toFixed(1) : 0,
+        averageSurvivalSeconds: games ? +(stats.totalSurvivalTicks / games / TICK_RATE).toFixed(1) : 0,
+        kills: stats.kills
+      };
+    });
+    res.json({
+      updatedAt: snapshot.updatedAt,
+      players
+    });
+  } catch (error) {
+    res.status(500).json({ error: '통계를 불러오지 못했습니다.' });
+  }
+});
+
+app.get('/api/profile/:name', async (req, res) => {
+  const name = String(req.params.name || '').trim();
+  if (!name) {
+    res.status(400).json({ error: '플레이어 이름이 필요합니다.' });
+    return;
+  }
+  try {
+    const profile = await statsStore.getProfile(name);
+    const games = profile.games || 0;
+    const averageScore = games ? Math.round(profile.totalScore / games) : 0;
+    const winRate = games ? +(profile.wins / games * 100).toFixed(1) : 0;
+    const averageSurvivalSeconds = games
+      ? +(profile.totalSurvivalTicks / games / TICK_RATE).toFixed(1)
+      : 0;
+    res.json({
+      name: profile.name,
+      games,
+      wins: profile.wins || 0,
+      winRate,
+      averageScore,
+      averageSurvivalSeconds,
+      totalScore: profile.totalScore || 0,
+      totalSurvivalTicks: profile.totalSurvivalTicks || 0,
+      kills: profile.kills || 0,
+      bestScore: profile.bestScore || 0,
+      bestKills: profile.bestKills || 0,
+      lastColor: profile.lastColor || null,
+      lastMode: profile.lastMode || null,
+      updatedAt: profile.updatedAt || Date.now(),
+      createdAt: profile.createdAt || null
+    });
+  } catch (error) {
+    res.status(500).json({ error: '프로필을 불러오지 못했습니다.' });
+  }
 });
 
 server.listen(PORT, () => {

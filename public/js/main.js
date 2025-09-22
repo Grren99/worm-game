@@ -74,6 +74,7 @@ const elements = {
   scoreboardBody: document.querySelector('#scoreboard tbody'),
   aliveList: document.getElementById('alive-list'),
   effectsList: document.getElementById('player-effects'),
+  playerProfile: document.getElementById('player-profile'),
   playerStatus: document.getElementById('player-status'),
   tournamentSection: document.getElementById('tournament-section'),
   tournamentWins: document.getElementById('tournament-wins'),
@@ -115,7 +116,8 @@ const state = {
   },
   personal: {
     lastScore: 0,
-    alive: true
+    alive: true,
+    profile: null
   }
 };
 
@@ -488,22 +490,49 @@ const updateAliveList = () => {
     .join('');
 };
 
+const renderPlayerProfile = () => {
+  const container = elements.playerProfile;
+  if (!container) return;
+  const profile = state.personal.profile;
+  if (!state.playerId || !profile) {
+    container.innerHTML = `
+      <li><span>게임 수</span><strong>-</strong></li>
+      <li><span>승률</span><strong>-</strong></li>
+      <li><span>평균 점수</span><strong>-</strong></li>
+      <li><span>최고 점수</span><strong>-</strong></li>`;
+    return;
+  }
+  const games = profile.games || 0;
+  const wins = profile.wins || 0;
+  const averageScore = games ? Math.round((profile.totalScore || 0) / games) : 0;
+  const bestScore = profile.bestScore || 0;
+  const winRate = games ? ((wins / games) * 100).toFixed(1) : '0.0';
+  container.innerHTML = `
+    <li><span>게임 수</span><strong>${games}</strong></li>
+    <li><span>승률</span><strong>${winRate}%</strong></li>
+    <li><span>평균 점수</span><strong>${averageScore}</strong></li>
+    <li><span>최고 점수</span><strong>${bestScore}</strong></li>`;
+};
+
 const updatePlayerStatus = () => {
   if (!state.playerId) {
     elements.playerStatus.textContent = '대기 중';
     elements.effectsList.innerHTML = '';
+    renderPlayerProfile();
     return;
   }
   const me = state.game?.players?.find((p) => p.id === state.playerId);
   if (!me) {
     elements.playerStatus.textContent = '관전 중';
     elements.effectsList.innerHTML = '';
+    renderPlayerProfile();
     return;
   }
   elements.playerStatus.textContent = me.alive ? '전투 중' : '탈락 (관전 가능)';
   elements.effectsList.innerHTML = (me.effects || [])
     .map((effect) => `<li>${POWERUP_ICON[effect] || '✨'} ${POWERUP_LABEL[effect] || effect}</li>`)
     .join('');
+  renderPlayerProfile();
 };
 
 const updateTournamentStatus = () => {
@@ -682,6 +711,8 @@ socket.on('player:assigned', ({ playerId, roomId, world, color, mode }) => {
   state.playerId = playerId;
   state.roomId = roomId;
   state.world = world;
+  state.personal.profile = null;
+  renderPlayerProfile();
   const previousColor = state.preferences.color;
   if (color && PLAYER_COLOR_KEYS.includes(color)) {
     applyPreferredColor(color);
@@ -700,6 +731,11 @@ socket.on('player:assigned', ({ playerId, roomId, world, color, mode }) => {
   elements.replayButton.disabled = true;
   notify(`플레이어 ID가 부여되었습니다 (${playerId.slice(0, 6)})`);
   if (state.audioEnabled) audio.playBgm();
+});
+
+socket.on('player:profile', (profile) => {
+  state.personal.profile = profile || null;
+  renderPlayerProfile();
 });
 
 socket.on('game:state', (gameState) => {
