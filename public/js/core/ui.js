@@ -51,6 +51,11 @@ const HIGHLIGHT_TAG_LABELS = new Map([
   ['my-win', '내 승리']
 ]);
 
+const ACCESSIBILITY_DEFAULTS = Object.freeze({
+  hudHighContrast: false,
+  colorblindPatterns: false
+});
+
 export class UIManager {
   constructor({ state, elements, socket, audio, highlightLibrary }) {
     this.state = state;
@@ -60,6 +65,7 @@ export class UIManager {
     this.highlightLibrary = highlightLibrary || null;
     this.statsInterval = null;
     this.audioStorageWarning = { load: false, save: false };
+    this.accessibilityStorageWarning = { load: false, save: false };
   }
 
   init() {
@@ -67,6 +73,7 @@ export class UIManager {
     this.renderColorPalette();
     this.updateModeIndicator();
     this.restoreAudioSettings();
+    this.restoreAccessibilityOptions();
     this.attachEventListeners();
     this.restoreHighlightFavorites();
     this.renderHighlights();
@@ -219,6 +226,76 @@ export class UIManager {
       this.audio.setSfxVolume(this.state.audioSettings.sfxVolume);
     }
     this.renderAudioSettings();
+  }
+
+  ensureAccessibilityPreferences() {
+    if (!this.state.preferences || typeof this.state.preferences !== 'object') {
+      this.state.preferences = {
+        color: PLAYER_COLOR_KEYS[0],
+        mode: GAME_MODES[0].key,
+        accessibility: { ...ACCESSIBILITY_DEFAULTS }
+      };
+      return this.state.preferences.accessibility;
+    }
+    if (!this.state.preferences.accessibility || typeof this.state.preferences.accessibility !== 'object') {
+      this.state.preferences.accessibility = { ...ACCESSIBILITY_DEFAULTS };
+    }
+    for (const key of Object.keys(ACCESSIBILITY_DEFAULTS)) {
+      this.state.preferences.accessibility[key] = Boolean(this.state.preferences.accessibility[key]);
+    }
+    return this.state.preferences.accessibility;
+  }
+
+  restoreAccessibilityOptions() {
+    const accessibility = this.ensureAccessibilityPreferences();
+    try {
+      const stored = localStorage.getItem('owb.accessibility');
+      if (stored) {
+        const parsed = JSON.parse(stored);
+        if (parsed && typeof parsed === 'object') {
+          for (const key of Object.keys(ACCESSIBILITY_DEFAULTS)) {
+            if (parsed[key] !== undefined) {
+              accessibility[key] = Boolean(parsed[key]);
+            }
+          }
+        }
+      }
+    } catch (error) {
+      if (!this.accessibilityStorageWarning.load) {
+        console.warn('접근성 설정을 불러오지 못했습니다:', error);
+        this.accessibilityStorageWarning.load = true;
+      }
+    }
+    this.updateAccessibilityControls();
+    this.applyAccessibilityOptions();
+  }
+
+  updateAccessibilityControls() {
+    const accessibility = this.ensureAccessibilityPreferences();
+    if (this.elements.accessibilityContrast) {
+      this.elements.accessibilityContrast.checked = Boolean(accessibility.hudHighContrast);
+    }
+    if (this.elements.accessibilityColorblind) {
+      this.elements.accessibilityColorblind.checked = Boolean(accessibility.colorblindPatterns);
+    }
+  }
+
+  applyAccessibilityOptions() {
+    const accessibility = this.ensureAccessibilityPreferences();
+    document.body.classList.toggle('hud-high-contrast', Boolean(accessibility.hudHighContrast));
+    document.body.classList.toggle('hud-colorblind', Boolean(accessibility.colorblindPatterns));
+  }
+
+  persistAccessibilityOptions() {
+    const accessibility = this.ensureAccessibilityPreferences();
+    try {
+      localStorage.setItem('owb.accessibility', JSON.stringify(accessibility));
+    } catch (error) {
+      if (!this.accessibilityStorageWarning.save) {
+        console.warn('접근성 설정을 저장하지 못했습니다:', error);
+        this.accessibilityStorageWarning.save = true;
+      }
+    }
   }
 
   updateSfxVolume(value) {
@@ -1713,6 +1790,34 @@ export class UIManager {
       this.elements.sfxVolume.addEventListener('input', (event) => {
         const raw = Number(event.target.value);
         this.updateSfxVolume(raw / 100);
+      });
+    }
+
+    if (this.elements.accessibilityContrast) {
+      this.elements.accessibilityContrast.addEventListener('change', (event) => {
+        const accessibility = this.ensureAccessibilityPreferences();
+        accessibility.hudHighContrast = Boolean(event.target.checked);
+        this.applyAccessibilityOptions();
+        this.persistAccessibilityOptions();
+        this.notify(
+          accessibility.hudHighContrast ? '파워업 HUD 고대비 모드를 켰습니다.' : '파워업 HUD 고대비 모드를 껐습니다.',
+          'info'
+        );
+      });
+    }
+
+    if (this.elements.accessibilityColorblind) {
+      this.elements.accessibilityColorblind.addEventListener('change', (event) => {
+        const accessibility = this.ensureAccessibilityPreferences();
+        accessibility.colorblindPatterns = Boolean(event.target.checked);
+        this.applyAccessibilityOptions();
+        this.persistAccessibilityOptions();
+        this.notify(
+          accessibility.colorblindPatterns
+            ? '색각 보조 패턴을 표시합니다.'
+            : '색각 보조 패턴을 숨겼습니다.',
+          'info'
+        );
       });
     }
 

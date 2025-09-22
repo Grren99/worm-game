@@ -138,6 +138,30 @@ body {
   font-size: 13px;
 }
 
+.field--stacked {
+  gap: 4px;
+}
+
+.field__option {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 0;
+  font-weight: 500;
+  color: rgba(255, 255, 255, 0.76);
+}
+
+.field__option input {
+  width: 16px;
+  height: 16px;
+  accent-color: #faad14;
+}
+
+.field__option span {
+  flex: 1;
+  font-size: 12px;
+}
+
 .field span {
   color: var(--text-muted);
 }
@@ -669,12 +693,67 @@ input:focus {
 }
 
 #player-effects li {
+  position: relative;
+  display: flex;
   flex-direction: column;
   align-items: stretch;
   gap: 6px;
   min-width: 140px;
-  background: rgba(250, 173, 20, 0.16);
-  color: #faad148f;
+  padding: 10px 12px 8px;
+  border-radius: 12px;
+  border: 1px solid var(--effect-border, rgba(255, 255, 255, 0.12));
+  background: var(--effect-surface, rgba(250, 173, 20, 0.16));
+  color: var(--effect-foreground, rgba(250, 173, 20, 0.9));
+  overflow: hidden;
+  z-index: 0;
+}
+
+#player-effects li > * {
+  position: relative;
+  z-index: 1;
+}
+
+#player-effects li::before,
+#player-effects li::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  transition: opacity 0.2s ease;
+}
+
+#player-effects li::before {
+  width: 0;
+  right: auto;
+  background: var(--effect-highlight, rgba(255, 255, 255, 0.6));
+  opacity: 0;
+}
+
+#player-effects li::after {
+  opacity: 0;
+  background-size: 24px 24px;
+  mix-blend-mode: screen;
+}
+
+#player-effects li[data-effect='speed'] {
+  --effect-surface: rgba(250, 173, 20, 0.2);
+  --effect-foreground: rgb(250, 190, 60);
+  --effect-border: rgba(250, 173, 20, 0.42);
+  --effect-highlight: #faad14;
+}
+
+#player-effects li[data-effect='shield'] {
+  --effect-surface: rgba(19, 194, 194, 0.18);
+  --effect-foreground: rgb(93, 222, 222);
+  --effect-border: rgba(19, 194, 194, 0.45);
+  --effect-highlight: #13c2c2;
+}
+
+#player-effects li[data-effect='shrink'] {
+  --effect-surface: rgba(146, 84, 222, 0.22);
+  --effect-foreground: rgb(181, 135, 238);
+  --effect-border: rgba(146, 84, 222, 0.42);
+  --effect-highlight: #9254de;
 }
 
 #player-effects .badge-row {
@@ -687,7 +766,7 @@ input:focus {
 
 #player-effects .badge-label {
   font-weight: 600;
-  color: #faad14;
+  color: var(--effect-foreground, #faad14);
 }
 
 #player-effects .badge-timer {
@@ -709,9 +788,71 @@ input:focus {
   display: block;
   height: 100%;
   border-radius: inherit;
-  background: #faad14;
-  box-shadow: 0 0 6px rgba(250, 173, 20, 0.4);
+  background: var(--effect-highlight, #faad14);
+  box-shadow: 0 0 6px rgba(0, 0, 0, 0.18);
   transition: width 0.22s ease;
+}
+
+body.hud-high-contrast #player-effects li {
+  background: rgba(3, 7, 16, 0.88);
+  color: #ffffff;
+  border-color: var(--effect-highlight, rgba(255, 255, 255, 0.7));
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.6);
+  padding-left: 20px;
+}
+
+body.hud-high-contrast #player-effects li::before {
+  opacity: 1;
+  width: 8px;
+}
+
+body.hud-high-contrast #player-effects .badge-label {
+  color: #ffffff;
+  font-weight: 700;
+  text-shadow: 0 1px 3px rgba(0, 0, 0, 0.35);
+}
+
+body.hud-high-contrast #player-effects .badge-timer {
+  color: rgba(255, 255, 255, 0.92);
+  text-shadow: none;
+}
+
+body.hud-high-contrast #player-effects .badge-progress {
+  background: rgba(255, 255, 255, 0.28);
+}
+
+body.hud-high-contrast #player-effects .badge-progress span {
+  box-shadow: 0 0 8px rgba(0, 0, 0, 0.45);
+}
+
+body.hud-colorblind #player-effects li::after {
+  opacity: 0.35;
+}
+
+body.hud-colorblind #player-effects li[data-effect='speed']::after {
+  background-image: repeating-linear-gradient(
+    45deg,
+    rgba(255, 255, 255, 0.65) 0 10px,
+    transparent 10px 20px
+  );
+}
+
+body.hud-colorblind #player-effects li[data-effect='shield']::after {
+  background-image:
+    radial-gradient(circle at 10% 20%, rgba(255, 255, 255, 0.6) 0 12%, transparent 12% 100%),
+    radial-gradient(circle at 70% 60%, rgba(255, 255, 255, 0.35) 0 14%, transparent 14% 100%);
+}
+
+body.hud-colorblind #player-effects li[data-effect='shrink']::after {
+  background-image: repeating-linear-gradient(
+    0deg,
+    rgba(255, 255, 255, 0.55) 0 6px,
+    transparent 6px 12px
+  );
+}
+
+body.hud-high-contrast.hud-colorblind #player-effects li::after {
+  opacity: 0.45;
 }
 
 .hud__section--tournament .badge-list {

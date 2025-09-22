@@ -14,6 +14,8 @@ export const elements = {
   colorPreview: document.getElementById('color-preview'),
   sfxVolume: document.getElementById('sfx-volume'),
   sfxVolumeValue: document.getElementById('sfx-volume-value'),
+  accessibilityContrast: document.getElementById('accessibility-contrast'),
+  accessibilityColorblind: document.getElementById('accessibility-colorblind'),
   quickJoin: document.getElementById('quick-join'),
   createRoom: document.getElementById('create-room'),
   joinRoom: document.getElementById('join-room'),

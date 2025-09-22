@@ -78,7 +78,11 @@ export const initialState = () => ({
   },
   preferences: {
     color: PLAYER_COLOR_KEYS[0],
-    mode: GAME_MODES[0].key
+    mode: GAME_MODES[0].key,
+    accessibility: {
+      hudHighContrast: false,
+      colorblindPatterns: false
+    }
   },
   personal: {
     lastScore: 0,

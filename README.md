@@ -10,6 +10,7 @@
 - 🧰 **파워업**: 속도 증가, 무적, 작아지기 아이템으로 전세를 뒤집을 수 있습니다
 - ⏳ **파워업 경고 HUD**: 남은 시간을 진행 바와 단계별 사운드 알림으로 미리 확인하고 대응할 수 있습니다
 - 🧑‍🎨 **커스터마이징**: 로비에서 원하는 지렁이 색상을 선택하고 게임 중에도 안전 구간에서 변경 가능합니다
+- ♿ **접근성 HUD**: 파워업 HUD 고대비·색각 보조 패턴을 토글해 누구나 가독성 있게 전투를 즐길 수 있습니다
 - 👀 **관전자 HUD**: 탈락 후 다중 시점 미니 카메라와 단축키로 주요 플레이어를 추적할 수 있습니다
 - 📱 **모바일 대응**: 가상 조이스틱과 반응형 레이아웃으로 터치 환경에서도 전투 가능
 - ⏱ **생존 보너스**: 오래 버틸수록 라운드 종료 시 추가 점수를 획득합니다
@@ -90,6 +91,12 @@ npm run loadtest -- --players=32 --duration=90 --mode=battle
 - `/api/profile/:name` 엔드포인트로 특정 플레이어의 누적 전적을 불러올 수 있습니다 (MongoDB 연결 시 영구 저장)
 - 개발 중에는 `npm run dev` 로 nodemon 감시 실행이 가능합니다
 - WebAudio 믹서 구조와 파워업 사운드 시퀀스는 [`docs/audio/mixer-test-plan.md`](docs/audio/mixer-test-plan.md), [`docs/audio/powerup-sfx.md`](docs/audio/powerup-sfx.md)에 정리되어 있습니다
+- 파워업 HUD 접근성 토글 로직과 스타일은 `public/js/core/ui.js`, `public/styles.css`의 `hud-high-contrast`/`hud-colorblind` 클래스를 참고하세요
+
+## 문서
+- [`docs/audio/spectator-feedback.md`](docs/audio/spectator-feedback.md): 관전자 전환음 사용자 피드백과 밸런싱 가이드 초안
+- [`docs/audio/powerup-warning-ab-test.md`](docs/audio/powerup-warning-ab-test.md): 파워업 경고 사운드 밸런싱 A/B 테스트 계획
+- [`docs/audio/ios-safari-audio-qa.md`](docs/audio/ios-safari-audio-qa.md): iOS Safari 오디오 호환성 QA 체크리스트
 
 ## 환경 변수
 - `MONGODB_URI`: MongoDB 연결 문자열. 설정하지 않으면 서버 메모리에 통계를 보관합니다.
